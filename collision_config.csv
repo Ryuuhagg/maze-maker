@@ -1,0 +1,14 @@
+# 2026-05-11: モデル追加時に、コードを触らず既定当たり判定を設定するため追加。
+# id,type,radius,width,depth
+# type: NONE / CIRCLE / ARC / BOX / WALL / STAIRS
+# CIRCLE: id,CIRCLE,radius
+# ARC:    id,ARC,radius,thickness  90度円弧コーナー用
+# 2026-05-20: 丸く曲がるコーナーはBOXではなく90度円弧のARCで判定する。四角いモデルだけBOXにする。
+# BOX:    id,BOX,0,width,depth
+# WALL:   id,WALL
+# STAIRS: id,STAIRS
+1,WALL
+2,ARC,280,35
+5,STAIRS
+6,BOX,0,140,140
+7,NONE
