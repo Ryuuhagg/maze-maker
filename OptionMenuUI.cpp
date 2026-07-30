@@ -1,4 +1,4 @@
-ï»¿#include"OptionMenuUI.h"
+#include"OptionMenuUI.h"
 #include"Input.h"
 #include"DxLib.h"
 #include"Constant.h"
@@ -29,7 +29,7 @@ void OptionMenuUI::Draw() {
 	uiManager.Draw();
 
 	if (time > 0) {
-		DrawString(WIDTH / 2, HEIGHT / 2, "ä¿å­˜ã•ã‚Œã¾ã—ãŸ", WHITE);
+		DrawString(WIDTH / 2, HEIGHT / 2, "•Û‘¶‚³‚ê‚Ü‚µ‚½", WHITE);
 	}
 }
 
@@ -98,13 +98,13 @@ void OptionMenuUI::BuildUI() {
 	uiManager.Add(title);
 
 	uiManager.Add(commonBtn);
-	uiManager.Add(make_shared<Label>(Pos{ 315, 154 }, 0, 0, "åŸºæœ¬è¨­å®š", BLACK));
+	uiManager.Add(make_shared<Label>(Pos{ 315, 154 }, 0, 0, "Šî–{İ’è", BLACK));
 
 	uiManager.Add(keyboardBtn);
-	uiManager.Add(make_shared<Label>(Pos{ 515, 154 }, 0, 0, "ã‚­ãƒ¼è¨­å®š", BLACK));
+	uiManager.Add(make_shared<Label>(Pos{ 515, 154 }, 0, 0, "ƒL[İ’è", BLACK));
 
 	uiManager.Add(padBtn);
-	uiManager.Add(make_shared<Label>(Pos{ 725, 154 }, 0, 0, "ãƒ‘ãƒƒãƒ‰è¨­å®š", BLACK));
+	uiManager.Add(make_shared<Label>(Pos{ 725, 154 }, 0, 0, "ƒpƒbƒhİ’è", BLACK));
 
 	y = 230;
 
@@ -127,19 +127,20 @@ void OptionMenuUI::BuildUI() {
 		uiManager.Add(se);
 		y += line;
 
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ãƒã‚¦ã‚¹æ„Ÿåº¦", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒ}ƒEƒXŠ´“x", WHITE));
 		mouseSensitivity = make_shared<Slider>(Pos{ x + 220, y }, 300, 20);
 		mouseSensitivity->SetValue(config.mouseSensitivity / 0.01f);
 		uiManager.Add(mouseSensitivity);
 		y += line;
 
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ãƒ‘ãƒƒãƒ‰æ„Ÿåº¦", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒpƒbƒhŠ´“x", WHITE));
 		padSensitivity = make_shared<Slider>(Pos{ x + 220, y }, 300, 20);
 		padSensitivity->SetValue(config.padSensitivity / 0.1f);
 		uiManager.Add(padSensitivity);
 		y += line;
 
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ã‚«ãƒ¡ãƒ©ä¸Šä¸‹åè»¢", WHITE));
+
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒJƒƒ‰ã‰º”½“]", WHITE));
 		invertY = make_shared<Toggle>(Pos{ x + 220, y }, 50, 30);
 		invertY->Set(config.CamelaUpDownFlip);
 		invertY->SetOnClick([this]() {
@@ -148,7 +149,7 @@ void OptionMenuUI::BuildUI() {
 		uiManager.Add(invertY);
 		y += line;
 
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ã‚«ãƒ¡ãƒ©å·¦å³åè»¢", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒJƒƒ‰¶‰E”½“]", WHITE));
 		invertX = make_shared<Toggle>(Pos{ x + 220, y }, 50, 30);
 		invertX->Set(config.CamelaRightLeftFlip);
 		invertX->SetOnClick([this]() {
@@ -168,62 +169,62 @@ void OptionMenuUI::BuildUI() {
 	else if (currentTab == KeyboardTab) {
 		auto jumpBtn = make_shared<KeyBindButton>(Pos{ x + 220, y }, 150, 40, &config.KeyJump);
 		jumpBtn->SetGroupId(2);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ã‚¸ãƒ£ãƒ³ãƒ—ã‚­ãƒ¼", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒWƒƒƒ“ƒvƒL[", WHITE));
 		uiManager.Add(jumpBtn);
 		y += line;
 
 		auto dashBtn = make_shared<KeyBindButton>(Pos{ x + 220, y }, 150, 40, &config.KeyDash);
 		dashBtn->SetGroupId(3);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ãƒ€ãƒƒã‚·ãƒ¥ã‚­ãƒ¼", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒ_ƒbƒVƒ…ƒL[", WHITE));
 		uiManager.Add(dashBtn);
 		y += line;
 
 		auto confirmBtn = make_shared<KeyBindButton>(Pos{ x + 220, y }, 150, 40, &config.KeyConfirm);
 		confirmBtn->SetGroupId(4);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "æ±ºå®šã‚­ãƒ¼", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "Œˆ’èƒL[", WHITE));
 		uiManager.Add(confirmBtn);
 		y += line;
 
 		auto cancelBtn = make_shared<KeyBindButton>(Pos{ x + 220, y }, 150, 40, &config.KeyCancel);
 		cancelBtn->SetGroupId(5);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ã‚­ãƒ£ãƒ³ã‚»ãƒ«ã‚­ãƒ¼", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒLƒƒƒ“ƒZƒ‹ƒL[", WHITE));
 		uiManager.Add(cancelBtn);
 		y += line;
 
 		auto pauseBtn = make_shared<KeyBindButton>(Pos{ x + 220, y }, 150, 40, &config.KeyPause);
 		pauseBtn->SetGroupId(6);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ãƒãƒ¼ã‚ºã‚­ãƒ¼", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒ|[ƒYƒL[", WHITE));
 		uiManager.Add(pauseBtn);
 		y += line;
 	}
 	else if (currentTab == PadTab) {
 		auto jumpBtn = make_shared<PadBindButton>(Pos{ x + 220, y }, 150, 40, &config.PadJump);
 		jumpBtn->SetGroupId(2);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ã‚¸ãƒ£ãƒ³ãƒ—ãƒœã‚¿ãƒ³", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒWƒƒƒ“ƒvƒ{ƒ^ƒ“", WHITE));
 		uiManager.Add(jumpBtn);
 		y += line;
 
 		auto dashBtn = make_shared<PadBindButton>(Pos{ x + 220, y }, 150, 40, &config.PadDash);
 		dashBtn->SetGroupId(3);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ãƒ€ãƒƒã‚·ãƒ¥ãƒœã‚¿ãƒ³", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒ_ƒbƒVƒ…ƒ{ƒ^ƒ“", WHITE));
 		uiManager.Add(dashBtn);
 		y += line;
 
 		auto confirmBtn = make_shared<PadBindButton>(Pos{ x + 220, y }, 150, 40, &config.PadConfirm);
 		confirmBtn->SetGroupId(4);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "æ±ºå®šãƒœã‚¿ãƒ³", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "Œˆ’èƒ{ƒ^ƒ“", WHITE));
 		uiManager.Add(confirmBtn);
 		y += line;
 
 		auto cancelBtn = make_shared<PadBindButton>(Pos{ x + 220, y }, 150, 40, &config.PadCancel);
 		cancelBtn->SetGroupId(5);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ã‚­ãƒ£ãƒ³ã‚»ãƒ«ãƒœã‚¿ãƒ³", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒLƒƒƒ“ƒZƒ‹ƒ{ƒ^ƒ“", WHITE));
 		uiManager.Add(cancelBtn);
 		y += line;
 
 		auto pauseBtn = make_shared<PadBindButton>(Pos{ x + 220, y }, 150, 40, &config.PadPause);
 		pauseBtn->SetGroupId(6);
-		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ãƒãƒ¼ã‚ºãƒœã‚¿ãƒ³", WHITE));
+		uiManager.Add(make_shared<Label>(Pos{ x, y }, 0, 0, "ƒ|[ƒYƒ{ƒ^ƒ“", WHITE));
 		uiManager.Add(pauseBtn);
 		y += line;
 	}
@@ -243,10 +244,10 @@ void OptionMenuUI::BuildUI() {
 	backBtn->SetGroupId(20);
 
 	uiManager.Add(saveBtn);
-	uiManager.Add(make_shared<Label>(Pos{ x + 150, y + 18 }, 0, 0, "ä¿å­˜", BLACK));
+	uiManager.Add(make_shared<Label>(Pos{ x + 150, y + 18 }, 0, 0, "•Û‘¶", BLACK));
 
 	uiManager.Add(backBtn);
-	uiManager.Add(make_shared<Label>(Pos{ x + 350, y + 18 }, 0, 0, "æˆ»ã‚‹", BLACK));
+	uiManager.Add(make_shared<Label>(Pos{ x + 350, y + 18 }, 0, 0, "–ß‚é", BLACK));
 }
 
 void OptionMenuUI::Play(const string& name) {

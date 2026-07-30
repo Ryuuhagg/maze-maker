@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include"Option.h"
 #include"UIManager.h"
 #include"UI.h"

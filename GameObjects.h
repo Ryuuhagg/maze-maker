@@ -1,7 +1,7 @@
-ï»¿#pragma once
+#pragma once
 #include "DxLib.h"
 
-// 2026-06-02: ã‚¨ãƒ‡ã‚£ã‚¿ãƒ¼ã®EVENTã‚¿ãƒ–ã‹ã‚‰ã‚²ãƒ¼ãƒ ç”¨ã‚®ãƒŸãƒƒã‚¯ã‚’ç½®ã‘ã‚‹ã‚ˆã†ã€ã‚¤ãƒ™ãƒ³ãƒˆIDã‚’åå‰ã§æ‰±ã†ãŸã‚è¿½åŠ ã€‚
+// 2026-06-02: ƒGƒfƒBƒ^[‚ÌEVENTƒ^ƒu‚©‚çƒQ[ƒ€—pƒMƒ~ƒbƒN‚ð’u‚¯‚é‚æ‚¤AƒCƒxƒ“ƒgID‚ð–¼‘O‚Åˆµ‚¤‚½‚ß’Ç‰ÁB
 enum GameEventId
 {
     GAME_EVENT_START = 0,
@@ -10,22 +10,25 @@ enum GameEventId
     GAME_EVENT_HAZARD = 3,
     GAME_EVENT_KEY = 4,
     GAME_EVENT_LOCKED_DOOR = 5,
-    // 2026-06-15: ä¸€åº¦é€šã£ãŸåœ°ç‚¹ã¸å¾©å¸°ã§ãã‚‹ã€ä»»æ„ãƒã‚§ãƒƒã‚¯ãƒã‚¤ãƒ³ãƒˆç”¨ã¨ã—ã¦è¿½åŠ ã€‚
+    // 2026-06-15: ˆê“x’Ê‚Á‚½’n“_‚Ö•œ‹A‚Å‚«‚éA”CˆÓƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg—p‚Æ‚µ‚Ä’Ç‰ÁB
     GAME_EVENT_CHECKPOINT = 7
 };
 
-// 2026-06-02: ã‚²ãƒ¼ãƒ ä¸­ã®ã€Œå–ã‚‹ã‚‚ã®/é¿ã‘ã‚‹ã‚‚ã®/éµ/æ‰‰ã€ã‚’Sceneã‹ã‚‰ã¾ã¨ã‚ã¦æ‰±ã†ãŸã‚è¿½åŠ ã€‚
+// 2026-06-02: ƒQ[ƒ€’†‚ÌuŽæ‚é‚à‚Ì/”ð‚¯‚é‚à‚Ì/Œ®/”àv‚ðScene‚©‚ç‚Ü‚Æ‚ß‚Äˆµ‚¤‚½‚ß’Ç‰ÁB
 void InitGameObjects();
 void UpdateGameObjects(VECTOR playerPos, int playerLayer, bool& playerDamaged);
 void DrawGameObjects();
 void DrawGameObjectHUD();
+// 2026-07-21: Œ®”à‚ªŠJ‚­‚Ü‚ÅƒvƒŒƒCƒ„[ˆÚ“®‚ðŽ~‚ß‚é‚½‚ßAƒ}ƒbƒvÕ“Ë‘¤‚©‚ç–â‚¢‡‚í‚¹‚éB
+bool HitActiveLockedDoorObject(int layer, float worldX, float worldZ, float radius);
 
-// 2026-06-15: ãƒ©ã‚¤ãƒ•ãŒæ®‹ã£ã¦ã„ã‚‹æ™‚ã®å¾©å¸°åœ°ç‚¹ã‚’ã€STARTã¾ãŸã¯ãƒã‚§ãƒƒã‚¯ãƒã‚¤ãƒ³ãƒˆã¨ã—ã¦æ‰±ã†ãŸã‚è¿½åŠ ã€‚
+// 2026-06-15: ƒ‰ƒCƒt‚ªŽc‚Á‚Ä‚¢‚éŽž‚Ì•œ‹A’n“_‚ðASTART‚Ü‚½‚Íƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg‚Æ‚µ‚Äˆµ‚¤‚½‚ß’Ç‰ÁB
 VECTOR GetGameRespawnPosition();
 void ResetGameCheckpoint();
 
-// 2026-06-02: ã‚´ãƒ¼ãƒ«åˆ¤å®šã¨HUDè¡¨ç¤ºã§éµãƒ»åŽé›†çŠ¶æ³ã‚’ç¢ºèªã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-02: ƒS[ƒ‹”»’è‚ÆHUD•\Ž¦‚ÅŒ®EŽûWó‹µ‚ðŠm”F‚·‚é‚½‚ß’Ç‰ÁB
 bool IsGameObjectGoalUnlocked();
 int GetGameObjectKeyCount();
 int GetGameObjectPickupCount();
 int GetGameObjectPickupTotal();
+

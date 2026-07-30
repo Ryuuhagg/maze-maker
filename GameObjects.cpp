@@ -1,4 +1,4 @@
-ï»¿#include "GameObjects.h"
+#include "GameObjects.h"
 #include "MapData.h"
 #include "MapLoader.h"
 #include <math.h>
@@ -8,15 +8,26 @@
 
 using namespace std;
 
-// 2026-06-02: ãƒãƒƒãƒ—ãƒ­ãƒ¼ãƒ‰å¾Œã«ç”Ÿæˆã•ã‚ŒãŸã‚²ãƒ¼ãƒ ç”¨ã‚®ãƒŸãƒƒã‚¯ã®ç¾åœ¨çŠ¶æ…‹ã‚’ä¿æŒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-02: ƒ}ƒbƒvƒ[ƒhŒã‚É¶¬‚³‚ê‚½ƒQ[ƒ€—pƒMƒ~ƒbƒN‚ÌŒ»İó‘Ô‚ğ•Û‚·‚é‚½‚ß’Ç‰ÁB
 static int gameObjectKeyCount = 0;
 static int gameObjectPickupCount = 0;
 static int gameObjectPickupTotal = 0;
 static float playerDamageCooldown = 0.0f;
+// 2026-07-01: Œ‹‡‘O‚Ìƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg•œ‹Aó‘Ô‚ğ–ß‚µAƒfƒ“ƒWƒƒ[€–SŒã‚Ì•œ‹Aæ‚ğ•Û‚·‚éB
+static bool gameCheckpointActivated = false;
+static int gameCheckpointLayer = 0;
+static int gameCheckpointX = 0;
+static int gameCheckpointZ = 0;
+// 2026-07-03: ƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg‚ğê—pMV1ƒ‚ƒfƒ‹‚Å•`‰æ‚·‚é‚½‚ß‚Ìƒnƒ“ƒhƒ‹B
+static int checkpointModelHandle = -1;
+// 2026-07-21: Œ®”à‚ğÁ‚³‚¸‚ÉŠJ‚¢‚½Œ©‚½–Ú‚ÖØ‚è‘Ö‚¦‚é‚½‚ßAŠJ‚«”àƒ‚ƒfƒ‹‚ğê—p‚É“Ç‚ŞB
+static int openDoorModelHandle = -1;
+// 2026-07-21: ƒgƒ‰ƒbƒv”­“®Œã‚Éindicator‚©‚çƒXƒpƒCƒNƒ‚ƒfƒ‹‚ÖØ‚è‘Ö‚¦‚é‚½‚ßA”­“®Œãƒ‚ƒfƒ‹‚ğê—p‚É“Ç‚ŞB
+static int triggeredTrapModelHandle = -1;
 
 static VECTOR GetEventWorldPosition(int layer, int x, int z)
 {
-    // 2026-06-02: EVENTã®ã‚»ãƒ«åº§æ¨™ã‚’ã€æç”»ã¨æ¥è§¦åˆ¤å®šã§ä½¿ã†ãƒ¯ãƒ¼ãƒ«ãƒ‰åº§æ¨™ã¸å¤‰æ›ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-02: EVENT‚ÌƒZƒ‹À•W‚ğA•`‰æ‚ÆÚG”»’è‚Åg‚¤ƒ[ƒ‹ƒhÀ•W‚Ö•ÏŠ·‚·‚é‚½‚ß’Ç‰ÁB
     return VGet(
         x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
         layer * BLOCK_SIZE + 80.0f,
@@ -26,27 +37,163 @@ static VECTOR GetEventWorldPosition(int layer, int x, int z)
 
 static float DistanceXZ(VECTOR a, VECTOR b)
 {
-    // 2026-06-02: ã‚®ãƒŸãƒƒã‚¯åˆ¤å®šã¯ä¸Šæ–¹å‘ã®æ®µå·®ã‚ˆã‚Šãƒã‚¹å†…è·é›¢ã‚’å„ªå…ˆã—ãŸã„ã®ã§ã€XZè·é›¢ã§è¦‹ã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-02: ƒMƒ~ƒbƒN”»’è‚Íã•ûŒü‚Ì’i·‚æ‚èƒ}ƒX“à‹——£‚ğ—Dæ‚µ‚½‚¢‚Ì‚ÅAXZ‹——£‚ÅŒ©‚é‚½‚ß’Ç‰ÁB
     float dx = a.x - b.x;
     float dz = a.z - b.z;
     return sqrtf(dx * dx + dz * dz);
 }
 
+static float DistancePointToSegmentXZ(float px, float pz, float x1, float z1, float x2, float z2, float& along)
+{
+    // 2026-07-22: Œ®”à‚Ì“–‚½‚è”»’è‚ğ•Ç‚Æ“¯‚¶uƒZƒ‹’[‚Ìüv‚Ö‡‚í‚¹‚é‚½‚ßAü•ª‚Ö‚Ì‹——£‚ğŒvZ‚·‚éB
+    float dx = x2 - x1;
+    float dz = z2 - z1;
+    float lenSq = dx * dx + dz * dz;
+    along = 0.0f;
+    if (lenSq > 0.0001f)
+    {
+        along = ((px - x1) * dx + (pz - z1) * dz) / lenSq;
+        if (along < 0.0f) along = 0.0f;
+        if (along > 1.0f) along = 1.0f;
+    }
+
+    float nearestX = x1 + dx * along;
+    float nearestZ = z1 + dz * along;
+    float diffX = px - nearestX;
+    float diffZ = pz - nearestZ;
+    return sqrtf(diffX * diffX + diffZ * diffZ);
+}
+
+static bool HitLockedDoorWallLine(int x, int z, int rot, float worldX, float worldZ, float radius)
+{
+    // 2026-07-22: Œ®”à‚ÍŠÛ”»’è‚Å‚Í‚È‚­A•`‰æˆÊ’u‚Æ“¯‚¶ƒZƒ‹’[‚ğ•Ç1–‡‚Æ‚µ‚Ä”»’è‚·‚éB
+    float left = x * BLOCK_SIZE;
+    float right = (x + 1) * BLOCK_SIZE;
+    float top = z * BLOCK_SIZE;
+    float bottom = (z + 1) * BLOCK_SIZE;
+
+    float x1 = left;
+    float z1 = top;
+    float x2 = right;
+    float z2 = top;
+    switch (rot & 3)
+    {
+    case 0:
+        x1 = left;  z1 = top;
+        x2 = right; z2 = top;
+        break;
+    case 1:
+        x1 = right; z1 = top;
+        x2 = right; z2 = bottom;
+        break;
+    case 2:
+        x1 = left;  z1 = bottom;
+        x2 = right; z2 = bottom;
+        break;
+    case 3:
+        x1 = left; z1 = top;
+        x2 = left; z2 = bottom;
+        break;
+    }
+
+    float lineDX = x2 - x1;
+    float lineDZ = z2 - z1;
+    float lineLen = sqrtf(lineDX * lineDX + lineDZ * lineDZ);
+    float rawAlong = 0.0f;
+    if (lineLen > 0.0001f)
+        rawAlong = ((worldX - x1) * lineDX + (worldZ - z1) * lineDZ) / (lineLen * lineLen);
+
+    float endMarginRate = lineLen > 0.0001f ? (radius * 0.85f) / lineLen : 0.0f;
+    if (rawAlong < -endMarginRate || rawAlong > 1.0f + endMarginRate)
+        return false;
+
+    float along = 0.0f;
+    float dist = DistancePointToSegmentXZ(worldX, worldZ, x1, z1, x2, z2, along);
+
+    float signedDist = 0.0f;
+    switch (rot & 3)
+    {
+    case 0: signedDist = worldZ - z1; break;
+    case 1: signedDist = x1 - worldX; break;
+    case 2: signedDist = z1 - worldZ; break;
+    case 3: signedDist = worldX - x1; break;
+    }
+
+    float frontThickness = BLOCK_SIZE * 0.19f;
+    float backThickness = BLOCK_SIZE * 0.03f;
+    if (signedDist >= 0.0f)
+        return dist <= radius + frontThickness;
+
+    float backRadius = radius * 0.75f;
+    return dist <= backRadius + backThickness;
+}
+static void DrawModelWithoutLighting(int modelHandle)
+{
+    // 2026-07-21: ‚±‚ÌDxLib‚É‚ÍMV1SetMaterialUseLighting‚ª–³‚¢‚½‚ßAƒ‚ƒfƒ‹•`‰æ’†‚¾‚¯ƒ‰ƒCƒg‚ğØ‚Á‚Ä‘S‘Ì‚ğ–¾‚é‚­Œ©‚¹‚éB
+    int oldLighting = GetLightEnable();
+    SetUseLighting(FALSE);
+    SetLightEnable(FALSE);
+    MV1DrawModel(modelHandle);
+    SetLightEnable(oldLighting);
+    SetUseLighting(TRUE);
+}
+
+static void ApplyLockedDoorDrawOffset(VECTOR& modelPos, int rot)
+{
+    // 2026-07-21: Œ®”à‚ÍEVENT’†‰›‚Å‚Í‚È‚­•Ç‚Æ“¯‚¶ƒZƒ‹•Ó‚É’u‚«A•ÇŒŠ‚ÆˆÊ’u‚ğ‡‚í‚¹‚éB
+    const float halfBlock = BLOCK_SIZE * 0.5f;
+    switch (rot & 3)
+    {
+    case 0: modelPos.z -= halfBlock; break;
+    case 1: modelPos.x += halfBlock; break;
+    case 2: modelPos.z += halfBlock; break;
+    case 3: modelPos.x -= halfBlock; break;
+    }
+}
+
+static void DrawGameEventModelHandle(int modelHandle, int layer, int x, int z, int rot, bool adjustLockedDoor)
+{
+    // 2026-07-21: •Â‚¶”à/ŠJ‚«”à‚Ì—¼•û‚ğ“¯‚¶À•W‚Æ‰ñ“]‚Å•`‚¯‚é‚æ‚¤AEVENTƒ‚ƒfƒ‹•`‰æ‚ğ‹¤’Ê‰»‚·‚éB
+    VECTOR modelPos = VGet(
+        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        layer * BLOCK_SIZE + 8.0f,
+        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+    );
+    if (adjustLockedDoor)
+    {
+        ApplyLockedDoorDrawOffset(modelPos, rot);
+    }
+    MV1SetPosition(modelHandle, modelPos);
+    MV1SetRotationXYZ(modelHandle, VGet(0.0f, (rot & 3) * DX_PI_F * 0.5f, 0.0f));
+    DrawModelWithoutLighting(modelHandle);
+}
+
+static bool DrawConfiguredGameEventModel(int eventId, int layer, int x, int z, int rot)
+{
+    int modelId = GetGameEventModelId(eventId);
+    if (modelId < 0 || modelId >= MODEL_MAX || gameModelHandles[modelId] == -1)
+        return false;
+
+    // 2026-07-06: model_config.csv‚ÅEVENT‚Éƒ‚ƒfƒ‹‚ªİ’è‚³‚ê‚Ä‚¢‚ê‚ÎAƒQ[ƒ€’†‚à“¯‚¶Œ©‚½–Ú‚Å•`‚­B
+    DrawGameEventModelHandle(gameModelHandles[modelId], layer, x, z, rot, eventId == GAME_EVENT_LOCKED_DOOR);
+    return true;
+}
+
 static bool IsSameLayerAsPlayer(int layer, VECTOR playerPos)
 {
-    // 2026-06-17: classåŒ–å¾Œã‚‚åˆ¥éšå±¤ã®ã‚®ãƒŸãƒƒã‚¯ã«è§¦ã‚ŒãŸæ‰±ã„ã«ãªã‚‰ãªã„ã‚ˆã†ã€éšå±¤åˆ¤å®šã‚’å…±é€šåŒ–ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-17: class‰»Œã‚à•ÊŠK‘w‚ÌƒMƒ~ƒbƒN‚ÉG‚ê‚½ˆµ‚¢‚É‚È‚ç‚È‚¢‚æ‚¤AŠK‘w”»’è‚ğ‹¤’Ê‰»‚·‚é‚½‚ß’Ç‰ÁB
     return layer == GetMapLayerFromWorldY(playerPos.y + BLOCK_SIZE * 0.5f);
 }
 
 static bool CanDamagePlayer()
 {
-    // 2026-06-02: ç½ ã‚„æ‰‰ã§é€£ç¶šãƒ’ãƒƒãƒˆã—ã¦ä¸€ç¬ã§ãƒ©ã‚¤ãƒ•ãŒæ¶ˆãˆãªã„ã‚ˆã†ã€ç„¡æ•µæ™‚é–“ã‚’ä½œã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-02: ã©‚â”à‚Å˜A‘±ƒqƒbƒg‚µ‚Äˆêu‚Åƒ‰ƒCƒt‚ªÁ‚¦‚È‚¢‚æ‚¤A–³“GŠÔ‚ğì‚é‚½‚ß’Ç‰ÁB
     return playerDamageCooldown <= 0.0f;
 }
 
 static void DamagePlayer(bool& playerDamaged)
 {
-    // 2026-06-02: GameObjectså´ã‹ã‚‰Playerã‚’ç›´æ¥è§¦ã‚‰ãšã€Sceneã¸ãƒ€ãƒ¡ãƒ¼ã‚¸ç™ºç”Ÿã ã‘æ¸¡ã™ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-02: GameObjects‘¤‚©‚çPlayer‚ğ’¼ÚG‚ç‚¸AScene‚Öƒ_ƒ[ƒW”­¶‚¾‚¯“n‚·‚½‚ß’Ç‰ÁB
     if (!CanDamagePlayer())
         return;
 
@@ -54,12 +201,12 @@ static void DamagePlayer(bool& playerDamaged)
     playerDamageCooldown = 90.0f;
 }
 
-// 2026-06-17: ã‚®ãƒŸãƒƒã‚¯ã”ã¨ã®å‡¦ç†ã‚’ifæ–‡ã§å¢—ã‚„ã•ãšã€ç¨®é¡ã”ã¨ã®classã¸åˆ†ã‘ã¦ç®¡ç†ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-17: ƒMƒ~ƒbƒN‚²‚Æ‚Ìˆ—‚ğif•¶‚Å‘‚â‚³‚¸Aí—Ş‚²‚Æ‚Ìclass‚Ö•ª‚¯‚ÄŠÇ—‚·‚é‚½‚ß’Ç‰ÁB
 class GameObjectBase
 {
 public:
     GameObjectBase(int eventId, int objectLayer, int mapX, int mapZ)
-        : id(eventId), layer(objectLayer), x(mapX), z(mapZ), active(true)
+        : id(eventId), layer(objectLayer), x(mapX), z(mapZ), rot(0), active(true)
     {
     }
 
@@ -77,14 +224,38 @@ public:
 
     VECTOR GetWorldPosition() const
     {
-        // 2026-06-17: classå¤–ã®å‡¦ç†ãŒåº§æ¨™ã ã‘ã‚’å®‰å…¨ã«èª­ã‚€ãŸã‚è¿½åŠ ã€‚
+        // 2026-06-17: classŠO‚Ìˆ—‚ªÀ•W‚¾‚¯‚ğˆÀ‘S‚É“Ç‚Ş‚½‚ß’Ç‰ÁB
         return GetPosition();
     }
 
     int GetLayer() const
     {
-        // 2026-06-17: classå¤–ã®å‡¦ç†ãŒéšå±¤ã ã‘ã‚’å®‰å…¨ã«èª­ã‚€ãŸã‚è¿½åŠ ã€‚
+        // 2026-06-17: classŠO‚Ìˆ—‚ªŠK‘w‚¾‚¯‚ğˆÀ‘S‚É“Ç‚Ş‚½‚ß’Ç‰ÁB
         return layer;
+    }
+
+    int GetId() const
+    {
+        // 2026-07-21: Œ®”à‚¾‚¯‚ğˆÚ“®‘j~‘ÎÛ‚É‚·‚é‚½‚ßAŠO‘¤‚©‚çƒCƒxƒ“ƒgID‚ğŠm”F‚Å‚«‚é‚æ‚¤‚É‚·‚éB
+        return id;
+    }
+
+    int GetRot() const
+    {
+        // 2026-07-22: Œ®”à‚Ì•ÇŒ^“–‚½‚è”»’è‚ÅA”z’u‚Ì‰ñ“]‚ğg‚¤‚½‚ß’Ç‰ÁB
+        return rot;
+    }
+
+    virtual bool BlocksMovement() const
+    {
+        // 2026-07-21: ŠJ‚¢‚½Œ®”à‚Í•`‰æ‚µ‚½‚Ü‚Ü’Ê‚ê‚é‚æ‚¤AˆÚ“®‘j~‚·‚é‚©‚ğclass‘¤‚Å•Ô‚·B
+        return active;
+    }
+
+    void SetRot(int eventRot)
+    {
+        // 2026-07-21: CSV‚©‚ç“Ç‚ñ‚¾EVENT‰ñ“]‚ğA¶¬Œã‚ÌŠeƒMƒ~ƒbƒN‚Ö“n‚·‚½‚ß’Ç‰ÁB
+        rot = eventRot & 3;
     }
 
 protected:
@@ -95,7 +266,7 @@ protected:
 
     bool IsNearPlayer(VECTOR playerPos, float radius) const
     {
-        // 2026-06-17: å„classãŒåŒã˜æ¥è§¦åˆ¤å®šã‚’ä½¿ãˆã‚‹ã‚ˆã†ã€åŸºåº•classã«ã¾ã¨ã‚ã‚‹ãŸã‚è¿½åŠ ã€‚
+        // 2026-06-17: Šeclass‚ª“¯‚¶ÚG”»’è‚ğg‚¦‚é‚æ‚¤AŠî’êclass‚É‚Ü‚Æ‚ß‚é‚½‚ß’Ç‰ÁB
         if (!IsSameLayerAsPlayer(layer, playerPos))
             return false;
 
@@ -106,10 +277,31 @@ protected:
     int layer;
     int x;
     int z;
+    // 2026-07-21: EVENTƒ‚ƒfƒ‹‚ğCSV‚Å•Û‘¶‚µ‚½Œü‚«‚Ì‚Ü‚Ü•`‰æ‚·‚é‚½‚ßAŠeƒMƒ~ƒbƒN‚ª‰ñ“]’l‚ğ‚ÂB
+    int rot;
     bool active;
 };
 
-// 2026-06-17: å–ã‚‹ã‚‚ã®å°‚ç”¨ã®å–å¾—å‡¦ç†ã‚’GameObjectBaseã‹ã‚‰åˆ†ã‘ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-07-06: START/GOAL‚È‚ÇA“®‚«‚Í•s—v‚Åƒ‚ƒfƒ‹‚¾‚¯•\¦‚µ‚½‚¢EVENT—p‚É’Ç‰ÁB
+class VisualEventObject : public GameObjectBase
+{
+public:
+    VisualEventObject(int eventId, int objectLayer, int mapX, int mapZ)
+        : GameObjectBase(eventId, objectLayer, mapX, mapZ)
+    {
+    }
+
+    void Update(VECTOR playerPos, int playerLayer, bool& playerDamaged) override
+    {
+    }
+
+    void Draw() const override
+    {
+        DrawConfiguredGameEventModel(id, layer, x, z, rot);
+    }
+};
+
+// 2026-06-17: æ‚é‚à‚Ìê—p‚Ìæ“¾ˆ—‚ğGameObjectBase‚©‚ç•ª‚¯‚é‚½‚ß’Ç‰ÁB
 class PickupObject : public GameObjectBase
 {
 public:
@@ -122,20 +314,24 @@ public:
     void Draw() const override;
 };
 
-// 2026-06-17: é¿ã‘ã‚‹ã‚‚ã®å°‚ç”¨ã®ãƒ€ãƒ¡ãƒ¼ã‚¸å‡¦ç†ã‚’GameObjectBaseã‹ã‚‰åˆ†ã‘ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-17: ”ğ‚¯‚é‚à‚Ìê—p‚Ìƒ_ƒ[ƒWˆ—‚ğGameObjectBase‚©‚ç•ª‚¯‚é‚½‚ß’Ç‰ÁB
 class HazardObject : public GameObjectBase
 {
 public:
     HazardObject(int objectLayer, int mapX, int mapZ)
-        : GameObjectBase(GAME_EVENT_HAZARD, objectLayer, mapX, mapZ)
+        : GameObjectBase(GAME_EVENT_HAZARD, objectLayer, mapX, mapZ), triggered(false)
     {
     }
 
     void Update(VECTOR playerPos, int playerLayer, bool& playerDamaged) override;
     void Draw() const override;
+
+private:
+    // 2026-07-21: ƒgƒ‰ƒbƒv‚Íˆê“x‚¾‚¯”­“®‚µA”­“®Œã‚ÍƒXƒpƒCƒNƒ‚ƒfƒ‹•\¦‚ÉØ‚è‘Ö‚¦‚éB
+    bool triggered;
 };
 
-// 2026-06-17: ã‚«ã‚®å–å¾—ã®å‡¦ç†ã‚’å°‚ç”¨classã«é–‰ã˜è¾¼ã‚ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-17: ƒJƒMæ“¾‚Ìˆ—‚ğê—pclass‚É•Â‚¶‚ß‚é‚½‚ß’Ç‰ÁB
 class KeyObject : public GameObjectBase
 {
 public:
@@ -148,12 +344,30 @@ public:
     void Draw() const override;
 };
 
-// 2026-06-17: ã‚«ã‚®æ‰‰ã®é–‹éŒ ã¨å¤±æ•—æ™‚ãƒ€ãƒ¡ãƒ¼ã‚¸ã‚’å°‚ç”¨classã«åˆ†ã‘ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-17: ƒJƒM”à‚ÌŠJù‚Æ¸”sƒ_ƒ[ƒW‚ğê—pclass‚É•ª‚¯‚é‚½‚ß’Ç‰ÁB
 class LockedDoorObject : public GameObjectBase
 {
 public:
     LockedDoorObject(int objectLayer, int mapX, int mapZ)
-        : GameObjectBase(GAME_EVENT_LOCKED_DOOR, objectLayer, mapX, mapZ)
+        : GameObjectBase(GAME_EVENT_LOCKED_DOOR, objectLayer, mapX, mapZ), opened(false)
+    {
+    }
+
+    void Update(VECTOR playerPos, int playerLayer, bool& playerDamaged) override;
+    void Draw() const override;
+    bool BlocksMovement() const override;
+
+private:
+    // 2026-07-21: Œ®‚ÅŠJ‚¯‚½‚ ‚Æ‚à”àƒIƒuƒWƒFƒNƒg‚ğc‚µAŠJ‚«”àƒ‚ƒfƒ‹‚ÖØ‚è‘Ö‚¦‚é‚½‚ß’Ç‰ÁB
+    bool opened;
+};
+
+// 2026-07-01: Œ‹‡‘O‚É‚ ‚Á‚½ƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg‚ÌÚGE•`‰æˆ—‚ğ–ß‚·B
+class CheckpointObject : public GameObjectBase
+{
+public:
+    CheckpointObject(int objectLayer, int mapX, int mapZ)
+        : GameObjectBase(GAME_EVENT_CHECKPOINT, objectLayer, mapX, mapZ)
     {
     }
 
@@ -161,12 +375,14 @@ public:
     void Draw() const override;
 };
 
-// 2026-06-17: ç¨®é¡ã”ã¨ã®classã‚’åŒã˜é…åˆ—ã§æ‰±ã†ãŸã‚ã€ãƒãƒªãƒ¢ãƒ¼ãƒ•ã‚£ã‚ºãƒ ç”¨ã®unique_ptrã§ä¿æŒã™ã‚‹ã‚ˆã†è¿½åŠ ã€‚
+// 2026-06-17: í—Ş‚²‚Æ‚Ìclass‚ğ“¯‚¶”z—ñ‚Åˆµ‚¤‚½‚ßAƒ|ƒŠƒ‚[ƒtƒBƒYƒ€—p‚Ìunique_ptr‚Å•Û‚·‚é‚æ‚¤’Ç‰ÁB
 static vector<unique_ptr<GameObjectBase>> gameObjects;
 
 static unique_ptr<GameObjectBase> CreateGameObjectFromEvent(int id, int layer, int x, int z)
 {
-    // 2026-06-17: EVENT IDã‹ã‚‰classã‚’ä½œã‚Šã€InitGameObjectsã®åˆ†å²ã‚’å°ã•ãã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-17: EVENT ID‚©‚çclass‚ğì‚èAInitGameObjects‚Ì•ªŠò‚ğ¬‚³‚­‚·‚é‚½‚ß’Ç‰ÁB
+    if (id == GAME_EVENT_START || id == GAME_EVENT_GOAL)
+        return unique_ptr<GameObjectBase>(new VisualEventObject(id, layer, x, z));
     if (id == GAME_EVENT_PICKUP)
         return unique_ptr<GameObjectBase>(new PickupObject(layer, x, z));
     if (id == GAME_EVENT_HAZARD)
@@ -175,6 +391,10 @@ static unique_ptr<GameObjectBase> CreateGameObjectFromEvent(int id, int layer, i
         return unique_ptr<GameObjectBase>(new KeyObject(layer, x, z));
     if (id == GAME_EVENT_LOCKED_DOOR)
         return unique_ptr<GameObjectBase>(new LockedDoorObject(layer, x, z));
+
+    // 2026-07-01: EVENT ID 7‚ğ–³‹‚¹‚¸Aƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg‚Æ‚µ‚Ä¶¬‚·‚éB
+    if (id == GAME_EVENT_CHECKPOINT)
+        return unique_ptr<GameObjectBase>(new CheckpointObject(layer, x, z));
 
     return unique_ptr<GameObjectBase>();
 }
@@ -190,20 +410,48 @@ void PickupObject::Update(VECTOR playerPos, int playerLayer, bool& playerDamaged
 
 void PickupObject::Draw() const
 {
-    DrawSphere3D(GetPosition(), 45.0f, 16, GetColor(80, 220, 255), GetColor(255, 255, 255), TRUE);
+    if (DrawConfiguredGameEventModel(id, layer, x, z, rot))
+        return;
+
+    // 2026-07-21: ƒ‚ƒfƒ‹–¢İ’è‚Ì‰¼•\¦‚ğo‚³‚¸A“o˜^ƒ‚ƒfƒ‹‚¾‚¯‚ğŒ©‚¹‚éB
 }
 
 void HazardObject::Update(VECTOR playerPos, int playerLayer, bool& playerDamaged)
 {
-    if (IsNearPlayer(playerPos, 120.0f))
+    if (playerLayer != layer)
+        return;
+
+    float left = x * BLOCK_SIZE;
+    float right = (x + 1) * BLOCK_SIZE;
+    float front = z * BLOCK_SIZE;
+    float back = (z + 1) * BLOCK_SIZE;
+    if (playerPos.x >= left && playerPos.x <= right && playerPos.z >= front && playerPos.z <= back)
     {
         DamagePlayer(playerDamaged);
+        if (!triggered)
+        {
+            // 2026-07-21: ‰‰ñÚG‚Åindicator‚©‚çƒXƒpƒCƒN‚ÖØ‚è‘Ö‚¦A”­“®Œã‚ào‚Ä‚¢‚éƒgƒ‰ƒbƒv‚Æ‚µ‚Äƒ_ƒ[ƒW”»’è‚ğc‚·B
+            triggered = true;
+        }
     }
 }
 
 void HazardObject::Draw() const
 {
-    DrawSphere3D(GetPosition(), 60.0f, 16, GetColor(255, 70, 70), GetColor(255, 255, 255), TRUE);
+    if (triggered)
+    {
+        if (triggeredTrapModelHandle != -1)
+        {
+            // 2026-07-21: ”­“®Œã‚Íindicator-special-cross‚Å‚Í‚È‚­ƒgƒ‰ƒbƒv–{‘Ìƒ‚ƒfƒ‹‚ğ•\¦‚·‚éB
+            DrawGameEventModelHandle(triggeredTrapModelHandle, layer, x, z, rot, false);
+        }
+        return;
+    }
+
+    if (DrawConfiguredGameEventModel(id, layer, x, z, rot))
+        return;
+
+    // 2026-07-21: ƒ‚ƒfƒ‹–¢İ’è‚Ì‰¼•\¦‚ğo‚³‚¸A“o˜^ƒ‚ƒfƒ‹‚¾‚¯‚ğŒ©‚¹‚éB
 }
 
 void KeyObject::Update(VECTOR playerPos, int playerLayer, bool& playerDamaged)
@@ -217,21 +465,28 @@ void KeyObject::Update(VECTOR playerPos, int playerLayer, bool& playerDamaged)
 
 void KeyObject::Draw() const
 {
-    VECTOR pos = GetPosition();
-    int color = GetColor(255, 220, 50);
-    DrawSphere3D(pos, 42.0f, 16, color, GetColor(255, 255, 255), TRUE);
-    DrawLine3D(VGet(pos.x - 55.0f, pos.y, pos.z), VGet(pos.x + 55.0f, pos.y, pos.z), color);
+    if (DrawConfiguredGameEventModel(id, layer, x, z, rot))
+        return;
+
+    // 2026-07-21: Œ®ƒ‚ƒfƒ‹‚ğg‚¤‚½‚ßA‰¼•\¦‚Ì‰©F‚¢ŠÛ‚Æü‚Ío‚³‚È‚¢B
 }
 
 void LockedDoorObject::Update(VECTOR playerPos, int playerLayer, bool& playerDamaged)
 {
-    if (!IsNearPlayer(playerPos, 130.0f))
+    if (opened)
+        return;
+
+    if (playerLayer != layer)
+        return;
+
+    if (!HitLockedDoorWallLine(x, z, rot, playerPos.x, playerPos.z, 40.0f))
         return;
 
     if (gameObjectKeyCount > 0)
     {
         gameObjectKeyCount--;
-        active = false;
+        // 2026-07-21: Œ®”à‚ÍÁ‚³‚¸‚ÉŠJ‚¢‚½ó‘Ô‚Ö•Ï‚¦AŒ©‚½–Ú‚ğŠJ‚«”àƒ‚ƒfƒ‹‚ÖØ‚è‘Ö‚¦‚éB
+        opened = true;
     }
     else
     {
@@ -241,26 +496,97 @@ void LockedDoorObject::Update(VECTOR playerPos, int playerLayer, bool& playerDam
 
 void LockedDoorObject::Draw() const
 {
-    VECTOR pos = GetPosition();
-    int color = GetColor(180, 120, 255);
-    DrawSphere3D(pos, 75.0f, 16, color, GetColor(255, 255, 255), TRUE);
-    DrawCube3D(
-        VGet(pos.x - 95.0f, layer * BLOCK_SIZE, pos.z - 30.0f),
-        VGet(pos.x + 95.0f, layer * BLOCK_SIZE + 190.0f, pos.z + 30.0f),
-        color,
-        GetColor(70, 40, 120),
-        TRUE
-    );
+    if (opened && openDoorModelHandle != -1)
+    {
+        // 2026-07-21: ŠJùŒã‚ÍÁ‚³‚¸AŠJ‚¢‚½”àƒ‚ƒfƒ‹‚ğ“¯‚¶ƒ}ƒXE“¯‚¶Œü‚«‚Å•`‰æ‚·‚éB
+        DrawGameEventModelHandle(openDoorModelHandle, layer, x, z, rot, true);
+        return;
+    }
+
+    if (DrawConfiguredGameEventModel(id, layer, x, z, rot))
+        return;
+
+    // 2026-07-21: Œ®”à‚àƒ‚ƒfƒ‹–¢İ’è‚Ì‡‚Ì‰¼•\¦‚ğo‚³‚¸A“o˜^ƒ‚ƒfƒ‹‚¾‚¯‚ğŒ©‚¹‚éB
+}
+
+bool LockedDoorObject::BlocksMovement() const
+{
+    // 2026-07-21: ŠJ‚¢‚½Œ®”à‚Íƒ‚ƒfƒ‹‚ğc‚µ‚½‚Ü‚Ü’Ês‰Â”\‚É‚·‚éB
+    return active && !opened;
+}
+
+void CheckpointObject::Update(VECTOR playerPos, int playerLayer, bool& playerDamaged)
+{
+    // 2026-07-01: ƒvƒŒƒCƒ„[‚ªG‚ê‚½’n“_‚ğAŸ‚Éƒ_ƒ[ƒW‚ğó‚¯‚½‚Ì•œ‹A’n“_‚Æ‚µ‚Ä•Û‚·‚éB
+    if (!IsNearPlayer(playerPos, 130.0f))
+        return;
+
+    gameCheckpointActivated = true;
+    gameCheckpointLayer = layer;
+    gameCheckpointX = x;
+    gameCheckpointZ = z;
+}
+
+void CheckpointObject::Draw() const
+{
+    if (DrawConfiguredGameEventModel(id, layer, x, z, rot))
+        return;
+
+    // 2026-07-21: ƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg”»’è‚ÆŠø‚ÌˆÊ’u‚ğ‡‚í‚¹‚é‚½‚ßA’ÊíEVENT‚Æ“¯‚¶ƒ}ƒX’†‰›•`‰æ‚É“ˆê‚·‚éB
+    if (checkpointModelHandle != -1)
+    {
+        DrawGameEventModelHandle(checkpointModelHandle, layer, x, z, rot, false);
+    }
 }
 
 void InitGameObjects()
 {
-    // 2026-06-02: CSVã‹ã‚‰èª­ã‚“ã GameEventMapã‚’ã€éŠã¶ãŸã³ã«åˆæœŸçŠ¶æ…‹ã®ã‚®ãƒŸãƒƒã‚¯ã¸å¤‰æ›ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-02: CSV‚©‚ç“Ç‚ñ‚¾GameEventMap‚ğA—V‚Ô‚½‚Ñ‚É‰Šúó‘Ô‚ÌƒMƒ~ƒbƒN‚Ö•ÏŠ·‚·‚é‚½‚ß’Ç‰ÁB
     gameObjects.clear();
     gameObjectKeyCount = 0;
     gameObjectPickupCount = 0;
     gameObjectPickupTotal = 0;
     playerDamageCooldown = 0.0f;
+    // 2026-07-01: V‚µ‚­—V‚Ñn‚ß‚½‚ÉA‘O‰ñ‚Ìƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg‚ğ‚¿‰z‚³‚È‚¢B
+    gameCheckpointActivated = false;
+    // 2026-07-21: ƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg•\¦—p‚Ì—\”õƒ‚ƒfƒ‹‚àAÅV‚ÌKenneyŠøƒ‚ƒfƒ‹‚Ö·‚µ‘Ö‚¦‚éB
+    if (checkpointModelHandle != -1)
+    {
+        MV1DeleteModel(checkpointModelHandle);
+        checkpointModelHandle = -1;
+    }
+    checkpointModelHandle = MV1LoadModel("model/3Dmodels/ƒMƒ~ƒbƒN/platformer/flag.mv1");
+    if (checkpointModelHandle != -1)
+    {
+        MV1SetScale(checkpointModelHandle, VGet(4.0f, 4.0f, 4.0f));
+    }
+
+    if (openDoorModelHandle != -1)
+    {
+        MV1DeleteModel(openDoorModelHandle);
+        openDoorModelHandle = -1;
+    }
+    // 2026-07-21: Œ®”à‚ªŠJ‚¢‚½Œã‚ÌŒ©‚½–Ú—pƒ‚ƒfƒ‹B”z’uID‚Í‘‚â‚³‚¸AƒQ[ƒ€’†‚¾‚¯g‚¤B
+    openDoorModelHandle = MV1LoadModel("model/3Dmodels/ƒMƒ~ƒbƒN/platformer/door-large-open.mv1");
+    if (openDoorModelHandle != -1)
+    {
+        MV1SetScale(openDoorModelHandle, VGet(4.0f, 4.0f, 4.0f));
+    }
+
+    if (triggeredTrapModelHandle != -1)
+    {
+        MV1DeleteModel(triggeredTrapModelHandle);
+        triggeredTrapModelHandle = -1;
+    }
+    // 2026-07-21: ƒgƒ‰ƒbƒv”­“®Œã‚ÍƒXƒpƒCƒNƒ‚ƒfƒ‹‚ÖØ‚è‘Ö‚¦‚ÄA”­“®Ï‚İ‚ªŒ©‚½–Ú‚Å•ª‚©‚é‚æ‚¤‚É‚·‚éB
+    triggeredTrapModelHandle = MV1LoadModel("model/3Dmodels/ƒMƒ~ƒbƒN/platformer/trap-spikes-large.mv1");
+    if (triggeredTrapModelHandle != -1)
+    {
+        MV1SetScale(triggeredTrapModelHandle, VGet(4.0f, 4.0f, 4.0f));
+    }
+
+    bool hasStartEventObject = false;
+    bool hasGoalEventObject = false;
 
     for (int y = 0; y < BLOCK_NUM_Y; y++)
     {
@@ -269,12 +595,20 @@ void InitGameObjects()
             for (int x = 0; x < BLOCK_NUM_X; x++)
             {
                 int id = GameEventMap[y][z][x];
-                if (id < GAME_EVENT_PICKUP)
+                if (id < 0)
                     continue;
+
+                if (id == GAME_EVENT_START)
+                    hasStartEventObject = true;
+                else if (id == GAME_EVENT_GOAL)
+                    hasGoalEventObject = true;
 
                 unique_ptr<GameObjectBase> obj = CreateGameObjectFromEvent(id, y, x, z);
                 if (!obj)
                     continue;
+
+                obj->SetRot(GameEventRot[y][z][x]);
+                // 2026-07-21: [EVENT]‚Ì‰ñ“]—ñ‚ğGameObject‚Ö“n‚µAƒ^ƒCƒgƒ‹‚©‚ç—V‚ñ‚Å‚à”à‚ÌŒü‚«‚ğ•Û‚ÂB
 
                 if (id == GAME_EVENT_PICKUP)
                     gameObjectPickupTotal++;
@@ -283,11 +617,17 @@ void InitGameObjects()
             }
         }
     }
+
+    // 2026-07-06: ŒÃ‚¢CSV‚Å[EVENT]‚ÉSTART/GOALs‚ª–³‚­‚Ä‚àAÀ•Wî•ñ‚©‚ç•\¦ƒ‚ƒfƒ‹‚ğ•âŠ®‚·‚éB
+    if (!hasStartEventObject)
+        gameObjects.push_back(unique_ptr<GameObjectBase>(new VisualEventObject(GAME_EVENT_START, gameStartY, gameStartX, gameStartZ)));
+    if (!hasGoalEventObject)
+        gameObjects.push_back(unique_ptr<GameObjectBase>(new VisualEventObject(GAME_EVENT_GOAL, gameGoalY, gameGoalX, gameGoalZ)));
 }
 
 void UpdateGameObjects(VECTOR playerPos, int playerLayer, bool& playerDamaged)
 {
-    // 2026-06-18: å„ã‚®ãƒŸãƒƒã‚¯classè‡ªèº«ã«Updateã‚’ä»»ã›ã€ç¨®é¡è¿½åŠ æ™‚ã«å¤§ããªifæ–‡ã‚’å¢—ã‚„ã•ãªã„å½¢ã¸å¤‰æ›´ã€‚
+    // 2026-06-18: ŠeƒMƒ~ƒbƒNclass©g‚ÉUpdate‚ğ”C‚¹Aí—Ş’Ç‰Á‚É‘å‚«‚Èif•¶‚ğ‘‚â‚³‚È‚¢Œ`‚Ö•ÏXB
     if (playerDamageCooldown > 0.0f)
         playerDamageCooldown -= 1.0f;
 
@@ -300,13 +640,47 @@ void UpdateGameObjects(VECTOR playerPos, int playerLayer, bool& playerDamaged)
     }
 }
 
-void DrawGameObjects()
+bool HitActiveLockedDoorObject(int checkLayer, float worldX, float worldZ, float radius)
 {
-    // 2026-06-18: å„ã‚®ãƒŸãƒƒã‚¯classè‡ªèº«ã«Drawã‚’ä»»ã›ã€æç”»è‰²ã‚„å½¢ã‚’classã”ã¨ã«ç®¡ç†ã§ãã‚‹ã‚ˆã†å¤‰æ›´ã€‚
+    // 2026-07-21: active‚ÈŒ®”à‚ğ•Çˆµ‚¢‚É‚µ‚ÄAŒ®‚ğg‚Á‚ÄÁ‚¦‚é‚Ü‚Å’Ê‚è”²‚¯‚Å‚«‚È‚¢‚æ‚¤‚É‚·‚éB
+    if (gameObjectKeyCount > 0)
+    {
+        // 2026-07-21: Œ®‚ğ‚Á‚Ä‚¢‚é‚ÍˆÚ“®”»’è‚Å~‚ß‚¸ALockedDoorObject::Update‚ÌŠJùˆ—‚Ü‚Å‹ß‚Ã‚¯‚é‚æ‚¤‚É‚·‚éB
+        return false;
+    }
+
     for (int i = 0; i < (int)gameObjects.size(); i++)
     {
-        if (gameObjects[i]->IsActive())
+        if (!gameObjects[i]->IsActive())
+            continue;
+        if (gameObjects[i]->GetLayer() != checkLayer)
+            continue;
+        if (gameObjects[i]->GetId() != GAME_EVENT_LOCKED_DOOR)
+            continue;
+        if (!gameObjects[i]->BlocksMovement())
+            continue;
+
+        VECTOR pos = gameObjects[i]->GetWorldPosition();
+        int cellX = (int)(pos.x / BLOCK_SIZE);
+        int cellZ = (int)(pos.z / BLOCK_SIZE);
+        if (HitLockedDoorWallLine(cellX, cellZ, gameObjects[i]->GetRot(), worldX, worldZ, radius))
         {
+            // 2026-07-22: ”à‚ÌˆÚ“®‘j~‚à•Ç‚Æ“¯‚¶ƒZƒ‹’[ƒ‰ƒCƒ“‚Ås‚¢AŠÛ”»’è‚ÌƒYƒŒ‚ğ‚È‚­‚·B
+            return true;
+        }
+    }
+
+    return false;
+}
+void DrawGameObjects()
+{
+    // 2026-06-18: ŠeƒMƒ~ƒbƒNclass©g‚ÉDraw‚ğ”C‚¹A•`‰æF‚âŒ`‚ğclass‚²‚Æ‚ÉŠÇ—‚Å‚«‚é‚æ‚¤•ÏXB
+    int drawLayer = GetGameDrawLayer();
+    for (int i = 0; i < (int)gameObjects.size(); i++)
+    {
+        if (gameObjects[i]->IsActive() && gameObjects[i]->GetLayer() == drawLayer)
+        {
+            // 2026-07-15: ƒ}ƒbƒv‚ÌŠK‘wƒtƒF[ƒh‚É‡‚í‚¹AƒMƒ~ƒbƒN‚àŒ»İ•`‰æ’†‚Ì1‘w‚¾‚¯•\¦‚·‚éB
             gameObjects[i]->Draw();
         }
     }
@@ -314,47 +688,63 @@ void DrawGameObjects()
 
 void DrawGameObjectHUD()
 {
-    // 2026-06-02: åé›†æ•°ã¨éµæ•°ãŒãƒ—ãƒ¬ã‚¤ä¸­ã«åˆ†ã‹ã‚‹ã‚ˆã†ã€ç°¡æ˜“HUDã‚’è¡¨ç¤ºã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-02: ûW”‚ÆŒ®”‚ªƒvƒŒƒC’†‚É•ª‚©‚é‚æ‚¤AŠÈˆÕHUD‚ğ•\¦‚·‚é‚½‚ß’Ç‰ÁB
     DrawFormatString(20, 20, GetColor(255, 255, 255), "ITEM %d/%d", gameObjectPickupCount, gameObjectPickupTotal);
     DrawFormatString(20, 44, GetColor(255, 230, 80), "KEY  %d", gameObjectKeyCount);
 
-    if (!IsGameObjectGoalUnlocked())
-    {
-        DrawString(20, 68, "ã‚´ãƒ¼ãƒ«ã«ã¯ã‚«ã‚®ã‹å…¨ã‚¢ã‚¤ãƒ†ãƒ ãŒå¿…è¦", GetColor(255, 180, 80));
-    }
+    // 2026-07-01: ƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg‚ª—LŒø‚É‚È‚Á‚½‚±‚Æ‚ğHUD‚ÅŠm”F‚Å‚«‚é‚æ‚¤–ß‚·B
+    if (gameCheckpointActivated)
+        DrawString(20, 116, "CHECKPOINT ACTIVE", GetColor(255, 220, 60));
 }
 
 bool IsGameObjectGoalUnlocked()
 {
-    // 2026-06-02: éµã‚’æŒã£ã¦ã„ã‚‹ã€ã¾ãŸã¯å–ã‚‹ã‚‚ã®ã‚’å…¨éƒ¨é›†ã‚ãŸæ™‚ã ã‘ã‚´ãƒ¼ãƒ«è¨±å¯ã«ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
-    return gameObjectKeyCount > 0 || gameObjectPickupCount >= gameObjectPickupTotal;
+    // 2026-07-22: Pickups and keys no longer gate the goal; reaching the goal cell is enough.
+    return true;
 }
 
 int GetGameObjectKeyCount()
 {
-    // 2026-06-02: HUDã‚„ã‚´ãƒ¼ãƒ«åˆ¤å®šã‹ã‚‰éµã®æ‰€æŒæ•°ã‚’å‚ç…§ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-02: HUD‚âƒS[ƒ‹”»’è‚©‚çŒ®‚ÌŠ”‚ğQÆ‚·‚é‚½‚ß’Ç‰ÁB
     return gameObjectKeyCount;
 }
 
 int GetGameObjectPickupCount()
 {
-    // 2026-06-02: HUDã§å–ã£ãŸæ•°ã‚’è¡¨ç¤ºã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-02: HUD‚Åæ‚Á‚½”‚ğ•\¦‚·‚é‚½‚ß’Ç‰ÁB
     return gameObjectPickupCount;
 }
 
 int GetGameObjectPickupTotal()
 {
-    // 2026-06-02: HUDã§å–ã‚‹ã‚‚ã®ã®ç·æ•°ã‚’è¡¨ç¤ºã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+    // 2026-06-02: HUD‚Åæ‚é‚à‚Ì‚Ì‘”‚ğ•\¦‚·‚é‚½‚ß’Ç‰ÁB
     return gameObjectPickupTotal;
 }
 
 VECTOR GetGameRespawnPosition()
 {
-    // 2026-06-18: ãƒã‚§ãƒƒã‚¯ãƒã‚¤ãƒ³ãƒˆclassæœªå®Ÿè£…æ™‚ã§ã‚‚æ­»äº¡å¾©å¸°å‡¦ç†ã®ãƒªãƒ³ã‚¯ã‚¨ãƒ©ãƒ¼ã‚’å‡ºã•ãšã€STARTã¸æˆ»ã›ã‚‹ã‚ˆã†è¿½åŠ ã€‚
+    // 2026-07-01: Œ‹‡‘O‚Æ“¯‚¶‚­AÚGÏ‚İƒ`ƒFƒbƒNƒ|ƒCƒ“ƒg‚ª‚ ‚ê‚Î‚»‚±‚ÖA–¢ÚG‚È‚çSTART‚Ö–ß‚·B
+    if (gameCheckpointActivated)
+    {
+        return VGet(
+            gameCheckpointX * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+            gameCheckpointLayer * BLOCK_SIZE,
+            gameCheckpointZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        );
+    }
+
     return GetStartPosition();
 }
 
 void ResetGameCheckpoint()
 {
-    // 2026-06-18: ãƒã‚§ãƒƒã‚¯ãƒã‚¤ãƒ³ãƒˆçŠ¶æ…‹ã‚’ã¾ã ä¿æŒã—ã¦ã„ãªã„ãŸã‚ã€ã‚²ãƒ¼ãƒ çµ‚äº†æ™‚ã«ãƒªã‚»ãƒƒãƒˆã§ãã‚‹ç©ºå®Ÿè£…ã¨ã—ã¦è¿½åŠ ã€‚
+    // 2026-07-01: •Êƒ}ƒbƒv‚âŸ‰ñƒvƒŒƒC‚Öƒ`ƒFƒbƒNƒ|ƒCƒ“ƒgó‘Ô‚ğ‚¿‰z‚³‚È‚¢B
+    gameCheckpointActivated = false;
+    gameCheckpointLayer = 0;
+    gameCheckpointX = 0;
+    gameCheckpointZ = 0;
 }
+
+
+
+

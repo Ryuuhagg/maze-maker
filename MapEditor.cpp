@@ -17,21 +17,37 @@ using namespace std;
 
 int FloorMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 int FloorRot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-21: 色変更ボタンで選んだ色を、配置済み床ごとに保存する。
+int FloorColorMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
 int WallMapA[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 int WallMapB[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 int WallRotA[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 int WallRotB[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-21: 壁はA/Bの2枠があるため、色も別々に保持する。
+int WallColorMapA[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+int WallColorMapB[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
 int CornerMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 int CornerRot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-21: 角モデルの色変更を配置単位で保持する。
+int CornerColorMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
 int DecoMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 int DecoRot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-21: 装飾モデルの色変更を配置単位で保持する。
+int DecoColorMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-16: 0.5床の上層接続方向をエディターで指定できるよう追加。
+int ClimbLinkMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
 // 2026-06-11: 敵配置をEventMapへ混ぜず、[ENEMY]として保存できるよう追加。
 int EnemyMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+int EnemyPatrolCountMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+int EnemyPatrolXMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X][ENEMY_PATROL_POINT_MAX];
+int EnemyPatrolZMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X][ENEMY_PATROL_POINT_MAX];
 int EventMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-21: 鍵扉などのEVENTモデルをRキーの向きで置けるよう、EVENT専用の回転値を追加。
+int EventRot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 // 2026-05-11: エディターでセル単位の手動当たり判定を持たせ、CSV経由でLoaderへ渡すため追加。
 int CollisionMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 // 2026-05-20: UnityのBoxColliderのように手動当たり判定を直接触って調整できるよう、中心オフセットとサイズを持たせる。
@@ -83,6 +99,8 @@ int currentRot = 0;
 int currentMapIndex = 1;
 // 2026-05-26: 最初の保存時に入力した名前を保持し、次回以降は同じCSVへ上書き保存する。
 char gameCurrentMapName[64] = "";
+// 2026-07-17: マップ説明を保存UIとinfo.txtの間で共有し、タイトルなどから後で読み出せるよう保持する。
+char gameCurrentMapDescription[256] = "";
 //char mapNameList[256][64];
 
 //int mapNameCount = 0;
@@ -109,7 +127,20 @@ float hoverWorldX = 0.0f;
 float hoverWorldZ = 0.0f;
 
 bool showGrid = true;
+// 2026-07-21: 右パネルの色変更ボタンで選んだ色番号。0は通常色。
+int editorColorIndex = 0;
+// 2026-07-21: 消しゴムボタンON中は、左クリック配置を削除操作として扱う。
+bool eraserMode = false;
+bool eraserAllMode = false;
+int eraserTarget = ERASER_TARGET_FLOOR;
 bool brushMode = false;
+// 2026-07-08: 置いてある敵ごとに巡回ポイントを編集できるよう、ENEMYタブ用の編集状態を追加。
+bool enemyPatrolEditMode = false;
+int selectedPatrolEnemyLayer = -1;
+int selectedPatrolEnemyX = -1;
+int selectedPatrolEnemyZ = -1;
+// 2026-07-07: 編集中に現在の層だけを見られるよう、他階層の表示を切り替える。
+bool showCurrentLayerOnly = false;
 // 2026-05-11: 当たり判定編集と確認表示を、配置作業中に切り替えられるよう追加。
 bool showCollisionDebug = false;
 bool collisionEditMode = false;
@@ -134,6 +165,10 @@ int selectedCollisionZ = -1;
 // 2026-05-26: F5初回保存時にCSVファイル名をキーボード入力するための状態。
 bool saveNameInputActive = false;
 char saveNameInput[64] = "";
+// 2026-07-17: 保存時にマップ説明も入力できるよう、名前とは別の入力欄を持つ。
+char saveDescriptionInput[256] = "";
+int saveInputField = 0;
+int saveDescriptionKeyInput = -1;
 // 2026-06-25: 選択範囲を名前付きキットとして登録するための入力状態。
 bool kitNameInputActive = false;
 char kitNameInput[64] = "";
@@ -154,8 +189,8 @@ static int selectedEditorKitIndex = -1;
 static bool pendingKitThumbnailSave = false;
 static char pendingKitThumbnailName[64] = "";
 
-int startX = 0, startY = 0, startZ = 0;
-int goalX = 5, goalY = 0, goalZ = 5;
+int startX = -1, startY = -1, startZ = -1;
+int goalX = -1, goalY = -1, goalZ = -1;
 
 #pragma endregion
 
@@ -165,6 +200,9 @@ int goalX = 5, goalY = 0, goalZ = 5;
 float camRotY = 0.7f;
 float camRotX = 0.4f;
 float camDist = 6500.0f;
+// 2026-07-21: 未選択時の左ドラッグで、マップ中央固定ではなく見ている方向基準で注視点を動かす。
+float camTargetX = BLOCK_NUM_X * BLOCK_SIZE * 0.5f;
+float camTargetZ = BLOCK_NUM_Z * BLOCK_SIZE * 0.5f;
 
 #pragma endregion
 
@@ -173,6 +211,10 @@ float camDist = 6500.0f;
 
 int modelHandles[MODEL_MAX];
 int paletteTex[MODEL_MAX];
+// 2026-07-21: model_config.csvのoffsetX/offsetZ/offsetYでモデルごとの表示位置を調整する。
+float modelOffsetX[MODEL_MAX];
+float modelOffsetZ[MODEL_MAX];
+float modelOffsetY[MODEL_MAX];
 
 #pragma endregion
 
@@ -255,6 +297,8 @@ int CopyDecoRot[COPY_MAX_Z][COPY_MAX_X];
 // 2026-06-11: 範囲コピー/貼り付けでも敵配置をEVENTとは別に保持するため追加。
 int CopyEnemyMap[COPY_MAX_Z][COPY_MAX_X];
 int CopyEventMap[COPY_MAX_Z][COPY_MAX_X];
+// 2026-07-21: 扉入りキットや範囲コピーでもEVENTの向きが戻らないよう、コピー用回転値を追加。
+int CopyEventRot[COPY_MAX_Z][COPY_MAX_X];
 // 2026-05-11: 範囲コピー/貼り付けでも手動当たり判定を一緒に扱うため追加。
 int CopyCollisionMap[COPY_MAX_Z][COPY_MAX_X];
 // 2026-05-20: 範囲コピー/貼り付けでもBoxCollider風の調整値を一緒に扱うため追加。
@@ -293,7 +337,75 @@ static bool IsHoverValid()
 {
     return IsMapPosValid(currentLayer, hoverZ, hoverX);
 }
+// 2026-07-08: 巡回ポイントを、選択中の敵配置セルへ紐づけるための共通処理。
+static bool IsSelectedPatrolEnemyValid()
+{
+    return IsMapPosValid(selectedPatrolEnemyLayer, selectedPatrolEnemyZ, selectedPatrolEnemyX) &&
+        EnemyMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX] >= 0;
+}
 
+static void ClearEnemyPatrolPoints(int layer, int z, int x)
+{
+    if (!IsMapPosValid(layer, z, x))
+        return;
+
+    EnemyPatrolCountMap[layer][z][x] = 0;
+    for (int i = 0; i < ENEMY_PATROL_POINT_MAX; i++)
+    {
+        EnemyPatrolXMap[layer][z][x][i] = -1;
+        EnemyPatrolZMap[layer][z][x][i] = -1;
+    }
+}
+
+static void SelectPatrolEnemy(int layer, int z, int x)
+{
+    if (!IsMapPosValid(layer, z, x) || EnemyMap[layer][z][x] < 0)
+        return;
+
+    selectedPatrolEnemyLayer = layer;
+    selectedPatrolEnemyX = x;
+    selectedPatrolEnemyZ = z;
+}
+
+static void AddPatrolPointToSelectedEnemy(int z, int x)
+{
+    if (!IsSelectedPatrolEnemyValid())
+        return;
+
+    int& count = EnemyPatrolCountMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX];
+    if (count >= ENEMY_PATROL_POINT_MAX)
+        return;
+
+    EnemyPatrolXMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][count] = x;
+    EnemyPatrolZMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][count] = z;
+    count++;
+}
+
+static bool RemovePatrolPointFromSelectedEnemy(int z, int x)
+{
+    if (!IsSelectedPatrolEnemyValid())
+        return false;
+
+    int& count = EnemyPatrolCountMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX];
+    for (int i = 0; i < count; i++)
+    {
+        if (EnemyPatrolXMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][i] == x &&
+            EnemyPatrolZMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][i] == z)
+        {
+            for (int j = i; j < count - 1; j++)
+            {
+                EnemyPatrolXMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][j] = EnemyPatrolXMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][j + 1];
+                EnemyPatrolZMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][j] = EnemyPatrolZMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][j + 1];
+            }
+            count--;
+            EnemyPatrolXMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][count] = -1;
+            EnemyPatrolZMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][count] = -1;
+            return true;
+        }
+    }
+
+    return false;
+}
 static bool HasValidSelection()
 {
     return
@@ -301,11 +413,36 @@ static bool HasValidSelection()
         IsMapPosValid(selectLayer, selectEndZ, selectEndX);
 }
 
+static void ClearRangeSelectionRect()
+{
+    // 2026-07-22: コピー配置を置き終わったら、コピー元の青い範囲枠だけ消せるよう選択座標を初期化する。
+    selecting = false;
+    selectStartX = -1;
+    selectStartZ = -1;
+    selectEndX = -1;
+    selectEndZ = -1;
+    selectLayer = currentLayer;
+}
+static void ClearMultiSelection();
+
+void ClearEditorRangeSelection()
+{
+    selectMode = false;
+    pasteMode = false;
+    ClearRangeSelectionRect();
+    ClearMultiSelection();
+}
 #pragma endregion
 
 #include "MapEditorCollisionEditing.inl"
 
 #include "MapEditorSelectionClipboard.inl"
+
+int GetEditorEventIdFromModelForUI(int modelId)
+{
+    // 2026-07-22: MapUI.cppからEVENTの表示名を出すため、model_config.csvのplaceId変換を公開する。
+    return GetEditorEventIdFromModel(modelId);
+}
 
 #pragma region ===== 複数選択 =====
 
@@ -443,6 +580,91 @@ static void RotateRangeSelectedCells()
 
     MarkEditorMapDirty();
 }
+static bool EditorCellNeedsColorChange(int layer, int z, int x)
+{
+    if (!IsMapPosValid(layer, z, x))
+        return false;
+
+    return
+        (FloorMap[layer][z][x] >= 0 && FloorColorMap[layer][z][x] != editorColorIndex) ||
+        (WallMapA[layer][z][x] >= 0 && WallColorMapA[layer][z][x] != editorColorIndex) ||
+        (WallMapB[layer][z][x] >= 0 && WallColorMapB[layer][z][x] != editorColorIndex) ||
+        (CornerMap[layer][z][x] >= 0 && CornerColorMap[layer][z][x] != editorColorIndex) ||
+        (DecoMap[layer][z][x] >= 0 && DecoColorMap[layer][z][x] != editorColorIndex);
+}
+
+static void ApplyEditorColorToCell(int layer, int z, int x)
+{
+    // 2026-07-21: 選択範囲の色変更は、実際に置いてあるモデルの色番号だけをまとめて更新する。
+    if (FloorMap[layer][z][x] >= 0)
+        FloorColorMap[layer][z][x] = editorColorIndex;
+    if (WallMapA[layer][z][x] >= 0)
+        WallColorMapA[layer][z][x] = editorColorIndex;
+    if (WallMapB[layer][z][x] >= 0)
+        WallColorMapB[layer][z][x] = editorColorIndex;
+    if (CornerMap[layer][z][x] >= 0)
+        CornerColorMap[layer][z][x] = editorColorIndex;
+    if (DecoMap[layer][z][x] >= 0)
+        DecoColorMap[layer][z][x] = editorColorIndex;
+}
+
+bool ApplyEditorColorToSelection()
+{
+    bool changed = false;
+    bool pushedUndo = false;
+
+    auto applySelectedCell = [&](int layer, int z, int x)
+    {
+        if (!EditorCellNeedsColorChange(layer, z, x))
+            return;
+
+        if (!pushedUndo)
+        {
+            PushUndo();
+            pushedUndo = true;
+        }
+
+        ApplyEditorColorToCell(layer, z, x);
+        changed = true;
+    };
+
+    // 2026-07-21: 範囲選択がある時は、ドラッグで囲った範囲を優先して一括で塗り替える。
+    if (selectMode && HasValidSelection())
+    {
+        int minX = min(selectStartX, selectEndX);
+        int maxX = max(selectStartX, selectEndX);
+        int minZ = min(selectStartZ, selectEndZ);
+        int maxZ = max(selectStartZ, selectEndZ);
+
+        for (int z = minZ; z <= maxZ; z++)
+        {
+            for (int x = minX; x <= maxX; x++)
+            {
+                applySelectedCell(selectLayer, z, x);
+            }
+        }
+    }
+    else if (multiSelectCount > 0)
+    {
+        // 2026-07-21: Ctrl+左クリックで離して選んだマスも、色変更ボタンからまとめて塗り替えられるようにする。
+        for (int layer = 0; layer < BLOCK_NUM_Y; layer++)
+        {
+            for (int z = 0; z < BLOCK_NUM_Z; z++)
+            {
+                for (int x = 0; x < BLOCK_NUM_X; x++)
+                {
+                    if (multiSelectMap[layer][z][x])
+                        applySelectedCell(layer, z, x);
+                }
+            }
+        }
+    }
+
+    if (changed)
+        MarkEditorMapDirty();
+
+    return changed;
+}
 
 #pragma endregion
 
@@ -451,17 +673,49 @@ static void RotateRangeSelectedCells()
 int GetSelectedModel()
 {
     if (currentTab < 0 || currentTab >= TAB_MAX)
-        return 0;
+        return -1;
 
+    // 2026-07-21: selectedModel == -1 は未選択状態。配置ではなく左ドラッグのカメラ移動に使う。
     if (selectedModel < 0 || selectedModel >= tabModelCount[currentTab])
-        return 0;
+        return -1;
 
     return tabModelList[currentTab][selectedModel];
 }
 
+bool FindEditorEventPosition(int eventId, int& layer, int& z, int& x)
+{
+    for (int y = 0; y < BLOCK_NUM_Y; y++)
+    {
+        for (int zz = 0; zz < BLOCK_NUM_Z; zz++)
+        {
+            for (int xx = 0; xx < BLOCK_NUM_X; xx++)
+            {
+                if (EventMap[y][zz][xx] == eventId)
+                {
+                    layer = y;
+                    z = zz;
+                    x = xx;
+                    return true;
+                }
+            }
+        }
+    }
+
+    layer = -1;
+    z = -1;
+    x = -1;
+    return false;
+}
+
+bool SyncEditorStartGoalFromEvents()
+{
+    // 2026-07-16: START/GOAL未配置を初期座標と誤判定しないよう、EVENT配置の実在から座標を同期する。
+    bool hasStart = FindEditorEventPosition(0, startY, startZ, startX);
+    bool hasGoal = FindEditorEventPosition(1, goalY, goalZ, goalX);
+    return hasStart && hasGoal;
+}
 static int GetEditorPlacementRot(int tab, int z, int x)
 {
-    // 2026-06-28: 壁専用グリッドは細かく狙う必要があり置きにくかったため、Rで選んだ向きを使う。
     return currentRot;
 }
 
@@ -482,20 +736,29 @@ void ClearCurrentLayer()
         for (int x = 0; x < BLOCK_NUM_X; x++)
         {
             FloorMap[layer][z][x] = -1;
+            FloorColorMap[layer][z][x] = 0;
             WallMapA[layer][z][x] = -1;
+            WallColorMapA[layer][z][x] = 0;
             WallMapB[layer][z][x] = -1;
+            WallColorMapB[layer][z][x] = 0;
             CornerMap[layer][z][x] = -1;
+            CornerColorMap[layer][z][x] = 0;
             DecoMap[layer][z][x] = -1;
+            DecoColorMap[layer][z][x] = 0;
+            ClimbLinkMap[layer][z][x] = 0;
             EnemyMap[layer][z][x] = -1;
+            ClearEnemyPatrolPoints(layer, z, x);
             if (EventMap[layer][z][x] == 0)
             {
-                startX = 0; startY = 0; startZ = 0;
+                startX = -1; startY = -1; startZ = -1;
             }
             else if (EventMap[layer][z][x] == 1)
             {
-                goalX = 5; goalY = 0; goalZ = 5;
+                goalX = -1; goalY = -1; goalZ = -1;
             }
             EventMap[layer][z][x] = -1;
+            EventRot[layer][z][x] = 0;
+            // 2026-07-21: レイヤー削除後にEVENT回転だけ残ると、次の配置で向きが混ざるため初期化する。
             // 2026-05-11: レイヤークリア時に手動当たり判定も消すため追加。
             CollisionMap[layer][z][x] = -1;
             // 2026-05-20: レイヤークリア時にBoxCollider風の調整値も標準値へ戻す。
@@ -524,8 +787,11 @@ void ClearCurrentLayer()
 void ResetAllMap()
 {
     // 2026-05-13: マップ読込/リセット時に前の開始・ゴール座標が残らないよう追加。
-    startX = 0; startY = 0; startZ = 0;
-    goalX = 5; goalY = 0; goalZ = 5;
+    startX = -1; startY = -1; startZ = -1;
+    goalX = -1; goalY = -1; goalZ = -1;
+    selectedPatrolEnemyLayer = -1;
+    selectedPatrolEnemyX = -1;
+    selectedPatrolEnemyZ = -1;
     for (int y = 0; y < BLOCK_NUM_Y; y++)
     {
         for (int z = 0; z < BLOCK_NUM_Z; z++)
@@ -533,12 +799,21 @@ void ResetAllMap()
             for (int x = 0; x < BLOCK_NUM_X; x++)
             {
                 FloorMap[y][z][x] = -1;
+                FloorColorMap[y][z][x] = 0;
                 WallMapA[y][z][x] = -1;
+                WallColorMapA[y][z][x] = 0;
                 WallMapB[y][z][x] = -1;
+                WallColorMapB[y][z][x] = 0;
                 CornerMap[y][z][x] = -1;
+                CornerColorMap[y][z][x] = 0;
                 DecoMap[y][z][x] = -1;
+                DecoColorMap[y][z][x] = 0;
+                ClimbLinkMap[y][z][x] = 0;
                 EnemyMap[y][z][x] = -1;
+                ClearEnemyPatrolPoints(y, z, x);
                 EventMap[y][z][x] = -1;
+                EventRot[y][z][x] = 0;
+                // 2026-07-21: 全消去/読込初期化時にEVENT回転の古い値を残さないため追加。
                 // 2026-05-11: 全体リセット時に手動当たり判定も初期化するため追加。
                 CollisionMap[y][z][x] = -1;
                 // 2026-05-20: 全体初期化時にBoxCollider風の調整値も標準値へ戻す。
@@ -586,6 +861,141 @@ void ClearEditorMapDirty()
     editorMapDirty = false;
 }
 
+static void ClearEditorCellByTarget(int layer, int z, int x, int target)
+{
+    if (!IsMapPosValid(layer, z, x))
+        return;
+
+    if (target == ERASER_TARGET_FLOOR)
+    {
+        FloorMap[layer][z][x] = -1;
+        FloorRot[layer][z][x] = 0;
+        FloorColorMap[layer][z][x] = 0;
+    }
+    else if (target == ERASER_TARGET_WALL)
+    {
+        int wallRot = GetEditorPlacementRot(WALL, z, x);
+        if (WallMapA[layer][z][x] >= 0 && WallRotA[layer][z][x] == wallRot)
+        {
+            WallMapA[layer][z][x] = -1;
+            WallRotA[layer][z][x] = 0;
+            WallColorMapA[layer][z][x] = 0;
+        }
+        if (WallMapB[layer][z][x] >= 0 && WallRotB[layer][z][x] == wallRot)
+        {
+            WallMapB[layer][z][x] = -1;
+            WallRotB[layer][z][x] = 0;
+            WallColorMapB[layer][z][x] = 0;
+        }
+    }
+    else if (target == ERASER_TARGET_CORNER)
+    {
+        CornerMap[layer][z][x] = -1;
+        CornerRot[layer][z][x] = 0;
+        CornerColorMap[layer][z][x] = 0;
+        CollisionCornerScaleMap[layer][z][x] = 100;
+        CollisionCornerThicknessMap[layer][z][x] = 100;
+        CollisionCornerOffsetMap[layer][z][x] = 0;
+    }
+    else if (target == ERASER_TARGET_DECO)
+    {
+        DecoMap[layer][z][x] = -1;
+        DecoRot[layer][z][x] = 0;
+        DecoColorMap[layer][z][x] = 0;
+        ClimbLinkMap[layer][z][x] = 0;
+    }
+    else if (target == ERASER_TARGET_ENEMY)
+    {
+        EnemyMap[layer][z][x] = -1;
+        ClearEnemyPatrolPoints(layer, z, x);
+        if (selectedPatrolEnemyLayer == layer && selectedPatrolEnemyX == x && selectedPatrolEnemyZ == z)
+        {
+            selectedPatrolEnemyLayer = -1;
+            selectedPatrolEnemyX = -1;
+            selectedPatrolEnemyZ = -1;
+        }
+    }
+    else if (target == ERASER_TARGET_EVENT)
+    {
+        if (EventMap[layer][z][x] == 0)
+        {
+            startX = -1;
+            startY = -1;
+            startZ = -1;
+        }
+        else if (EventMap[layer][z][x] == 1)
+        {
+            goalX = -1;
+            goalY = -1;
+            goalZ = -1;
+        }
+        EventMap[layer][z][x] = -1;
+        EventRot[layer][z][x] = 0;
+    }
+}
+static void ClearEditorCellAllKinds(int layer, int z, int x)
+{
+    // 2026-07-22: 消しゴムは現在選択中のタブに縛らず、同じマスの配置物をまとめて消せるようにする。
+    if (!IsMapPosValid(layer, z, x))
+        return;
+
+    if (EventMap[layer][z][x] == 0)
+    {
+        startX = -1;
+        startY = -1;
+        startZ = -1;
+    }
+    else if (EventMap[layer][z][x] == 1)
+    {
+        goalX = -1;
+        goalY = -1;
+        goalZ = -1;
+    }
+
+    FloorMap[layer][z][x] = -1;
+    FloorRot[layer][z][x] = 0;
+    FloorColorMap[layer][z][x] = 0;
+
+    WallMapA[layer][z][x] = -1;
+    WallRotA[layer][z][x] = 0;
+    WallColorMapA[layer][z][x] = 0;
+    WallMapB[layer][z][x] = -1;
+    WallRotB[layer][z][x] = 0;
+    WallColorMapB[layer][z][x] = 0;
+
+    CornerMap[layer][z][x] = -1;
+    CornerRot[layer][z][x] = 0;
+    CornerColorMap[layer][z][x] = 0;
+    CollisionCornerScaleMap[layer][z][x] = 100;
+    CollisionCornerThicknessMap[layer][z][x] = 100;
+    CollisionCornerOffsetMap[layer][z][x] = 0;
+
+    DecoMap[layer][z][x] = -1;
+    DecoRot[layer][z][x] = 0;
+    DecoColorMap[layer][z][x] = 0;
+    ClimbLinkMap[layer][z][x] = 0;
+
+    EnemyMap[layer][z][x] = -1;
+    ClearEnemyPatrolPoints(layer, z, x);
+    if (selectedPatrolEnemyLayer == layer && selectedPatrolEnemyX == x && selectedPatrolEnemyZ == z)
+    {
+        selectedPatrolEnemyLayer = -1;
+        selectedPatrolEnemyX = -1;
+        selectedPatrolEnemyZ = -1;
+    }
+
+    EventMap[layer][z][x] = -1;
+    EventRot[layer][z][x] = 0;
+
+    CollisionMap[layer][z][x] = -1;
+    ResetCollisionBox(layer, z, x);
+    CollisionEdgeMap[layer][z][x] = -1;
+    for (int edge = 0; edge < 4; edge++)
+    {
+        CollisionEdgeScaleMap[layer][z][x][edge] = 100;
+        CollisionEdgeThicknessMap[layer][z][x][edge] = 100;
+    }
+}
 static void ClearPendingEditorLoad()
 {
     pendingLoadMapIndex = -1;
@@ -714,6 +1124,7 @@ static bool IsEditorConfigCsv(const char* name)
         strcmp(name, "collision_config") == 0 ||
         strcmp(name, "kit") == 0 ||
         strcmp(name, "kitbase") == 0 ||
+        strcmp(name, "キット") == 0 ||
         strcmp(name, "\x83" "L\x83" "b\x83" "g") == 0;
 }
 
@@ -1186,6 +1597,45 @@ bool RebuildEditorBaseKitCsv()
     return true;
 }
 
+static bool SaveDrawScreenReplaceFile(int x1, int y1, int x2, int y2, const char* path)
+{
+    if (path == nullptr || path[0] == '\0')
+        return false;
+
+    char tempPath[MAX_PATH];
+    sprintf_s(tempPath, sizeof(tempPath), "%s.new.bmp", path);
+    DeleteFileA(tempPath);
+
+    if (SaveDrawScreen(x1, y1, x2, y2, tempPath) != 0)
+    {
+        DeleteFileA(tempPath);
+        return false;
+    }
+
+    if (!MoveFileExA(tempPath, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    {
+        DeleteFileA(tempPath);
+        return false;
+    }
+
+    return true;
+}
+
+static void ReloadEditorKitThumbnailHandle(int index)
+{
+    if (index < 0 || index >= editorKitCount)
+        return;
+
+    if (editorKitThumbnailHandle[index] != -1)
+    {
+        DeleteGraph(editorKitThumbnailHandle[index]);
+        editorKitThumbnailHandle[index] = -1;
+    }
+
+    char thumbPath[MAX_PATH];
+    BuildEditorKitThumbnailPath(thumbPath, sizeof(thumbPath), editorKitNameList[index]);
+    editorKitThumbnailHandle[index] = LoadGraph(thumbPath);
+}
 static bool GetSelectionScreenRectForThumbnail(int& x1, int& y1, int& x2, int& y2)
 {
     if (!HasValidSelection())
@@ -1254,12 +1704,142 @@ static void DrawEditorKitThumbnailModel(int tab, int id, int x, int y, int z, in
         return;
 
     VECTOR pos = GetModelDrawPosition(tab, x, y, z, rot);
+    pos = ApplyEditorModelConfigOffset(tab, id, pos);
     int drawRot = GetEditorModelDrawRot(tab, id, rot);
 
     MV1SetPosition(modelHandles[id], pos);
     MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(drawRot), 0.0f));
     MV1SetOpacityRate(modelHandles[id], 1.0f);
+    // 2026-07-21: 保存サムネイルでもモデルが角度で暗くならないよう、描画中だけライト計算を切る。
+    int oldLighting = GetLightEnable();
+    SetUseLighting(FALSE);
+    SetLightEnable(FALSE);
     MV1DrawModel(modelHandles[id]);
+    SetLightEnable(oldLighting);
+    SetUseLighting(TRUE);
+}
+
+bool SaveEditorMapThumbnail(const char* thumbnailPath)
+{
+    // 2026-07-17: マップ一覧用サムネを現在画面の切り抜きではなく、専用のオフスクリーン描画で安定して保存する。
+    if (thumbnailPath == nullptr || thumbnailPath[0] == '\0')
+        return false;
+
+    int layer = startY;
+    if (layer < 0 || layer >= BLOCK_NUM_Y)
+        layer = currentLayer;
+    if (layer < 0 || layer >= BLOCK_NUM_Y)
+        layer = 0;
+
+    int minX = BLOCK_NUM_X;
+    int minZ = BLOCK_NUM_Z;
+    int maxX = -1;
+    int maxZ = -1;
+
+    auto IncludeThumbnailCell = [&](int x, int z)
+    {
+        if (x < minX) minX = x;
+        if (z < minZ) minZ = z;
+        if (x > maxX) maxX = x;
+        if (z > maxZ) maxZ = z;
+    };
+
+    for (int z = 0; z < BLOCK_NUM_Z; z++)
+    {
+        for (int x = 0; x < BLOCK_NUM_X; x++)
+        {
+            if (FloorMap[layer][z][x] >= 0 ||
+                WallMapA[layer][z][x] >= 0 ||
+                WallMapB[layer][z][x] >= 0 ||
+                CornerMap[layer][z][x] >= 0 ||
+                DecoMap[layer][z][x] >= 0 ||
+                EventMap[layer][z][x] >= 0 ||
+                EnemyMap[layer][z][x] >= 0)
+            {
+                IncludeThumbnailCell(x, z);
+            }
+        }
+    }
+
+    // 2026-07-17: 空のマップでもサムネ生成関数を呼べるよう、範囲が無い時は全体を写す。
+    if (maxX < minX || maxZ < minZ)
+    {
+        minX = 0;
+        minZ = 0;
+        maxX = BLOCK_NUM_X - 1;
+        maxZ = BLOCK_NUM_Z - 1;
+    }
+
+    const int thumbnailSize = 512;
+    int thumbnailScreen = MakeScreen(thumbnailSize, thumbnailSize, TRUE);
+    if (thumbnailScreen == -1)
+        return false;
+
+    int oldDrawScreen = GetDrawScreen();
+    SetDrawScreen(thumbnailScreen);
+    ClearDrawScreen();
+
+    float centerX = (minX + maxX + 1) * BLOCK_SIZE * 0.5f;
+    float centerZ = (minZ + maxZ + 1) * BLOCK_SIZE * 0.5f;
+    float centerY = layer * BLOCK_SIZE + BLOCK_SIZE * 0.25f;
+    float rangeX = (maxX - minX + 1) * BLOCK_SIZE;
+    float rangeZ = (maxZ - minZ + 1) * BLOCK_SIZE;
+    // 2026-07-17: サムネの見え方を毎回そろえるため、開始階層を固定角度・固定距離のカメラで撮る。
+    float cameraDist = max(900.0f, max(rangeX, rangeZ) * 1.28f);
+    float cameraRotY = 0.78f;
+    float cameraRotX = 0.58f;
+
+    SetUseZBuffer3D(TRUE);
+    SetWriteZBuffer3D(TRUE);
+    SetCameraNearFar(10.0f, 50000.0f);
+    SetCameraPositionAndTarget_UpVecY(
+        VGet(
+            centerX + sinf(cameraRotY) * cosf(cameraRotX) * cameraDist,
+            centerY + 280.0f + sinf(cameraRotX) * cameraDist,
+            centerZ + cosf(cameraRotY) * cosf(cameraRotX) * cameraDist),
+        VGet(centerX, centerY, centerZ));
+
+    auto DrawThumbnailFloorBlockBase = [](int x, int y, int z, float topOffset, float height, int faceColor, int edgeColor)
+    {
+        float left = x * BLOCK_SIZE;
+        float right = (x + 1) * BLOCK_SIZE;
+        float front = z * BLOCK_SIZE;
+        float back = (z + 1) * BLOCK_SIZE;
+        float topY = y * BLOCK_SIZE + topOffset - 2.0f;
+        float bottomY = topY - height;
+
+        DrawCube3D(
+            VGet(left, bottomY, front),
+            VGet(right, topY, back),
+            faceColor,
+            edgeColor,
+            TRUE
+        );
+    };
+
+    for (int z = minZ; z <= maxZ; z++)
+    {
+        for (int x = minX; x <= maxX; x++)
+        {
+            if (FloorMap[layer][z][x] >= 0)
+                DrawThumbnailFloorBlockBase(x, layer, z, 0.0f, BLOCK_SIZE * 0.22f, GetColor(82, 72, 58), GetColor(38, 32, 26));
+
+            if (DecoMap[layer][z][x] == 6)
+                DrawThumbnailFloorBlockBase(x, layer, z, BLOCK_SIZE * 0.5f, BLOCK_SIZE * 0.5f, GetColor(90, 80, 62), GetColor(42, 35, 27));
+
+            DrawEditorKitThumbnailModel(FLOOR, FloorMap[layer][z][x], x, layer, z, FloorRot[layer][z][x]);
+            DrawEditorKitThumbnailModel(WALL, WallMapA[layer][z][x], x, layer, z, WallRotA[layer][z][x]);
+            DrawEditorKitThumbnailModel(WALL, WallMapB[layer][z][x], x, layer, z, WallRotB[layer][z][x]);
+            DrawEditorKitThumbnailModel(CORNER, CornerMap[layer][z][x], x, layer, z, CornerRot[layer][z][x]);
+            DrawEditorKitThumbnailModel(DECO, DecoMap[layer][z][x], x, layer, z, DecoRot[layer][z][x]);
+        }
+    }
+
+    int saveResult = SaveDrawScreen(0, 0, thumbnailSize - 1, thumbnailSize - 1, thumbnailPath);
+
+    SetDrawScreen(oldDrawScreen);
+    DeleteGraph(thumbnailScreen);
+    return saveResult == 0;
 }
 
 static bool SaveEditorKitThumbnailFromSelection(const char* kitName)
@@ -1316,11 +1896,11 @@ static bool SaveEditorKitThumbnailFromSelection(const char* kitName)
 
     char thumbPath[MAX_PATH];
     BuildEditorKitThumbnailPath(thumbPath, sizeof(thumbPath), kitName);
-    SaveDrawScreen(0, 0, thumbnailSize - 1, thumbnailSize - 1, thumbPath);
+    bool saved = SaveDrawScreenReplaceFile(0, 0, thumbnailSize - 1, thumbnailSize - 1, thumbPath);
 
     SetDrawScreen(oldDrawScreen);
     DeleteGraph(thumbnailScreen);
-    return true;
+    return saved;
 }
 
 static bool SaveEditorKitThumbnailFromCopyBuffer(const char* kitName)
@@ -1371,11 +1951,11 @@ static bool SaveEditorKitThumbnailFromCopyBuffer(const char* kitName)
 
     char thumbPath[MAX_PATH];
     BuildEditorKitThumbnailPath(thumbPath, sizeof(thumbPath), kitName);
-    SaveDrawScreen(0, 0, thumbnailSize - 1, thumbnailSize - 1, thumbPath);
+    bool saved = SaveDrawScreenReplaceFile(0, 0, thumbnailSize - 1, thumbnailSize - 1, thumbPath);
 
     SetDrawScreen(oldDrawScreen);
     DeleteGraph(thumbnailScreen);
-    return true;
+    return saved;
 }
 
 static void SavePendingEditorKitThumbnail()
@@ -1395,10 +1975,17 @@ bool RefreshSelectedEditorKitThumbnail()
     if (selectedEditorKitIndex < 0 || selectedEditorKitIndex >= editorKitCount)
         return false;
 
-    if (!SaveEditorKitThumbnailFromCopyBuffer(editorKitNameList[selectedEditorKitIndex]))
+    int targetIndex = selectedEditorKitIndex;
+    if (editorKitThumbnailHandle[targetIndex] != -1)
+    {
+        DeleteGraph(editorKitThumbnailHandle[targetIndex]);
+        editorKitThumbnailHandle[targetIndex] = -1;
+    }
+
+    if (!SaveEditorKitThumbnailFromCopyBuffer(editorKitNameList[targetIndex]))
         return false;
 
-    RefreshEditorKitList();
+    ReloadEditorKitThumbnailHandle(targetIndex);
     return true;
 }
 
@@ -1438,7 +2025,8 @@ static void WriteCurrentCopyBufferAsKit(const char* kitName)
             ofs << ","
                 << CopyCollisionCornerScaleMap[z][x] << ","
                 << CopyCollisionCornerThicknessMap[z][x] << ","
-                << CopyCollisionCornerOffsetMap[z][x] << "\n";
+                << CopyCollisionCornerOffsetMap[z][x] << ","
+                << CopyEventRot[z][x] << "\n";
         }
     }
 }
@@ -1494,6 +2082,7 @@ static bool LoadEditorKitToCopyBuffer(const char* kitName)
             CopyDecoMap[z][x] = stoi(cols[c++]);
             CopyDecoRot[z][x] = stoi(cols[c++]);
             CopyEventMap[z][x] = stoi(cols[c++]);
+            CopyEventRot[z][x] = 0;
             CopyCollisionMap[z][x] = stoi(cols[c++]);
             CopyCollisionBoxOffsetXMap[z][x] = stoi(cols[c++]);
             CopyCollisionBoxOffsetZMap[z][x] = stoi(cols[c++]);
@@ -1509,6 +2098,8 @@ static bool LoadEditorKitToCopyBuffer(const char* kitName)
             CopyCollisionCornerScaleMap[z][x] = stoi(cols[c++]);
             CopyCollisionCornerThicknessMap[z][x] = stoi(cols[c++]);
             CopyCollisionCornerOffsetMap[z][x] = stoi(cols[c++]);
+            // 2026-07-21: 古いキットCSVはEVENT回転列が無いため、列がある時だけ読む。
+            CopyEventRot[z][x] = c < (int)cols.size() ? stoi(cols[c++]) : 0;
         }
     }
 
@@ -1532,24 +2123,29 @@ void SelectEditorKit(int index)
 
 void RefreshMapNameList()
 {
-    // 2026-05-26: 保存済みCSVを一覧化し、マップ選択を番号ではなく名前で行えるようにする。
+    // 2026-07-15: マップ一覧は直置きCSVではなく、maps/マップ名/map.csv を持つフォルダから作る。
     mapNameCount = 0;
+    CreateDirectoryA("maps", NULL);
 
     WIN32_FIND_DATAA findData;
-    HANDLE handle = FindFirstFileA("*.csv", &findData);
+    HANDLE handle = FindFirstFileA("maps\\*", &findData);
     if (handle != INVALID_HANDLE_VALUE)
     {
         do
         {
-            if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+            if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
                 continue;
 
-            char baseName[64];
-            CopyCsvBaseName(baseName, sizeof(baseName), findData.cFileName);
-            if (IsEditorConfigCsv(baseName))
+            if (strcmp(findData.cFileName, ".") == 0 || strcmp(findData.cFileName, "..") == 0)
                 continue;
 
-            strcpy_s(mapNameList[mapNameCount], sizeof(mapNameList[mapNameCount]), baseName);
+            char csvPath[260];
+            sprintf_s(csvPath, sizeof(csvPath), "maps\\%s\\map.csv", findData.cFileName);
+            ifstream mapCsv(csvPath);
+            if (!mapCsv)
+                continue;
+
+            strcpy_s(mapNameList[mapNameCount], sizeof(mapNameList[mapNameCount]), findData.cFileName);
             mapNameCount++;
         } while (mapNameCount < MAP_NAME_LIST_MAX && FindNextFileA(handle, &findData));
 
@@ -1603,13 +2199,78 @@ static void SyncSelectedMapNameToCurrent()
 
     strcpy_s(selectedMapName, sizeof(selectedMapName), gameCurrentMapName);
 }
+static void SyncSaveDescriptionFromKeyInput()
+{
+    if (saveDescriptionKeyInput != -1)
+        GetKeyInputString(saveDescriptionInput, saveDescriptionKeyInput);
+}
+
+static void EnsureSaveDescriptionKeyInput()
+{
+    if (saveDescriptionKeyInput != -1)
+        return;
+
+    // 2026-07-22: 新規保存ボタンを押した瞬間にIME用KeyInputを作ると環境によって固まるため、DESC欄を選んだ時だけ遅延作成する。
+    saveDescriptionKeyInput = MakeKeyInput(sizeof(saveDescriptionInput) - 1, FALSE, FALSE, FALSE);
+    if (saveDescriptionKeyInput != -1)
+        SetKeyInputString(saveDescriptionInput, saveDescriptionKeyInput);
+}
+
+static bool IsSaveDescriptionIMECandidateOpen()
+{
+    if (saveInputField != 1 || saveDescriptionKeyInput == -1 || GetActiveKeyInput() != saveDescriptionKeyInput)
+        return false;
+
+    const IMEINPUTDATA* imeData = GetIMEInputData();
+    return imeData != nullptr && imeData->CandidateNum > 0;
+}
+static void SetSaveInputField(int field)
+{
+    // 2026-07-17: マップ説明欄だけDxLibのKeyInputを有効にし、日本語IME入力を受け取れるようにする。
+    SyncSaveDescriptionFromKeyInput();
+    saveInputField = field;
+
+    if (saveInputField == 1)
+    {
+        EnsureSaveDescriptionKeyInput();
+        if (saveDescriptionKeyInput != -1)
+            SetActiveKeyInput(saveDescriptionKeyInput);
+    }
+    else
+    {
+        SetActiveKeyInput(-1);
+    }
+}
+
+static void CloseSaveNameInput()
+{
+    // 2026-07-17: 保存/キャンセル時にKeyInputを破棄し、他の画面へ日本語入力状態を残さないようにする。
+    SyncSaveDescriptionFromKeyInput();
+    if (saveDescriptionKeyInput != -1)
+    {
+        DeleteKeyInput(saveDescriptionKeyInput);
+        saveDescriptionKeyInput = -1;
+    }
+    SetActiveKeyInput(-1);
+    saveNameInputActive = false;
+}
+
 static void StartSaveNameInput()
 {
     // 2026-05-26: まだ保存名がない時だけ、F5で名前を付けて保存に入る。確定/取消もEnter/EscではなくF5/F9にして他入力と被らせない。
     strcpy_s(saveNameInput, sizeof(saveNameInput), gameCurrentMapName);
-    saveNameInputActive = true;
-}
+    strcpy_s(saveDescriptionInput, sizeof(saveDescriptionInput), gameCurrentMapDescription);
 
+    if (saveDescriptionKeyInput != -1)
+    {
+        DeleteKeyInput(saveDescriptionKeyInput);
+        saveDescriptionKeyInput = -1;
+    }
+
+    // 2026-07-22: 保存名だけ入力する時はKeyInputを作らず、DESC欄へ移動した時に日本語入力を準備する。
+    saveNameInputActive = true;
+    SetSaveInputField(0);
+}
 static void StartKitNameInput()
 {
     // 2026-06-25: 選択範囲を名前付きキットとして登録できるよう、マップ保存とは別の名前入力を開始する。
@@ -1625,19 +2286,70 @@ void StartEditorKitRegistrationFromSelection()
     StartKitNameInput();
 }
 
+bool HasEditorRangeSelection()
+{
+    // 2026-07-21: UIボタン表示を、範囲選択中かつ有効範囲がある時だけコピー表示へ変えるため公開する。
+    return selectMode && HasValidSelection();
+}
+
+bool StartEditorCopyFromSelectionButton()
+{
+    // 2026-07-21: 右パネルのコピークリックで、Ctrl+Cと同じくコピー後すぐ左クリック配置へ入れるようにする。
+    if (!HasValidSelection())
+    {
+        selectMode = true;
+        selecting = false;
+        return false;
+    }
+
+    CopySelection();
+    if (!hasCopyData)
+        return false;
+
+    pasteMode = true;
+    copyRotation = 0;
+    selectMode = false;
+    selecting = false;
+    return true;
+}
 // 2026-06-25: 上部バーの保存ボタンから、F5と同じ保存処理を呼べるよう追加。
+bool IsEditorSaveInputActive()
+{
+    // 2026-07-17: 保存ダイアログ中はScene側のテストプレイ/タイトルUI入力を止めるため状態を公開する。
+    return saveNameInputActive;
+}
 void SaveEditorFromUI()
 {
     if (gameCurrentMapName[0] == '\0')
         StartSaveNameInput();
     else
     {
-        SaveMap();
-        SyncSelectedMapNameToCurrent();
+        StartSaveNameInput();
     }
 }
 
-static char GetTriggeredSaveNameChar()
+void NewEditorMapFromUI()
+{
+    // 2026-07-15: 別名保存で前のマップを複製せず、空の新規マップとして作り始められるよう追加。
+    ResetAllMap();
+    currentMapIndex = 0;
+    gameCurrentMapName[0] = '\0';
+    gameCurrentMapDescription[0] = '\0';
+    selectedMapName[0] = '\0';
+    strcpy_s(saveNameInput, sizeof(saveNameInput), "map");
+    saveDescriptionInput[0] = '\0';
+    if (saveDescriptionKeyInput != -1)
+    {
+        DeleteKeyInput(saveDescriptionKeyInput);
+        saveDescriptionKeyInput = -1;
+    }
+    // 2026-07-22: 新規保存直後のフリーズ回避のため、DESC欄を選ぶまでKeyInputは作らない。
+    saveNameInputActive = true;
+    SetSaveInputField(0);
+    ClearEditorMapDirty();
+}
+
+static char GetTriggeredSaveInputChar(bool forDescription)
 {
     bool shift = CheckHitKey(KEY_INPUT_LSHIFT) || CheckHitKey(KEY_INPUT_RSHIFT);
 
@@ -1669,9 +2381,9 @@ static char GetTriggeredSaveNameChar()
 
     static const KeyChar numbers[] =
     {
-        { KEY_INPUT_0, '0', '0' }, { KEY_INPUT_1, '1', '1' }, { KEY_INPUT_2, '2', '2' },
-        { KEY_INPUT_3, '3', '3' }, { KEY_INPUT_4, '4', '4' }, { KEY_INPUT_5, '5', '5' },
-        { KEY_INPUT_6, '6', '6' }, { KEY_INPUT_7, '7', '7' }, { KEY_INPUT_8, '8', '8' },
+        { KEY_INPUT_0, '0', '0' }, { KEY_INPUT_1, '1', '1' }, { KEY_INPUT_2, '2' , '2' },
+        { KEY_INPUT_3, '3', '3' }, { KEY_INPUT_4, '4', '4' }, { KEY_INPUT_5, '5' , '5' },
+        { KEY_INPUT_6, '6', '6' }, { KEY_INPUT_7, '7', '7' }, { KEY_INPUT_8, '8' , '8' },
         { KEY_INPUT_9, '9', '9' }
     };
 
@@ -1682,51 +2394,113 @@ static char GetTriggeredSaveNameChar()
     }
 
     if (Input::IsKeyTrigger(KEY_INPUT_SPACE))
-        return '_';
+        return forDescription ? ' ' : '_';
 
     return '\0';
 }
 
+static char GetTriggeredSaveNameChar()
+{
+    return GetTriggeredSaveInputChar(false);
+}
+
+static void CommitSaveNameInput()
+{
+    if (saveNameInput[0] == '\0')
+        return;
+
+    // 2026-07-17: 確定時に名前と説明を現在マップ情報へ反映し、info.txtから後で読めるよう保存する。
+    SyncSaveDescriptionFromKeyInput();
+    strcpy_s(gameCurrentMapName, 64, saveNameInput);
+    strcpy_s(gameCurrentMapDescription, sizeof(gameCurrentMapDescription), saveDescriptionInput);
+    SaveMapAsCurrentName();
+    SyncSelectedMapNameToCurrent();
+    CloseSaveNameInput();
+}
+
 static void UpdateSaveNameInput()
 {
-    DrawFormatString(0, 0, GetColor(255, 255, 255),
-        "ACTIVE");
+    // 2026-07-22: 保存入力中に左上へ出していたACTIVEデバッグ文字は提出用に表示しない。
+    int mx = 0;
+    int my = 0;
+    GetMousePoint(&mx, &my);
+    int mouse = GetMouseInput();
+    bool lTrigger = (mouse & MOUSE_INPUT_LEFT) && !(oldMouse & MOUSE_INPUT_LEFT);
+
+    if (lTrigger)
+    {
+        if (mx >= 360 && mx <= 900 && my >= 294 && my <= 328)
+        {
+            SetSaveInputField(0);
+            return;
+        }
+        if (mx >= 360 && mx <= 900 && my >= 338 && my <= 378)
+        {
+            SetSaveInputField(1);
+            return;
+        }
+        if (mx >= 680 && mx <= 800 && my >= 404 && my <= 432)
+        {
+            CommitSaveNameInput();
+            return;
+        }
+        if (mx >= 812 && mx <= 912 && my >= 404 && my <= 432)
+        {
+            CloseSaveNameInput();
+            return;
+        }
+    }
 
     if (Input::IsKeyTrigger(KEY_INPUT_F9))
     {
-        saveNameInputActive = false;
+        CloseSaveNameInput();
         return;
     }
 
-    if (Input::IsKeyTrigger(KEY_INPUT_BACK))
+    bool tabSwitchField = Input::IsKeyTrigger(KEY_INPUT_TAB) && (saveInputField == 0 || !IsSaveDescriptionIMECandidateOpen());
+    if (tabSwitchField ||
+        (saveInputField == 0 && (Input::IsKeyTrigger(KEY_INPUT_UP) || Input::IsKeyTrigger(KEY_INPUT_DOWN))))
     {
-        size_t len = strlen(saveNameInput);
-        if (len > 0)
-            saveNameInput[len - 1] = '\0';
+        // 2026-07-23: 説明欄でIME候補が出ている時だけTABは候補切替へ渡し、それ以外では入力欄切替に使う。
+        SetSaveInputField(1 - saveInputField);
+        return;
     }
 
-    char c = GetTriggeredSaveNameChar();
-    if (c != '\0')
+    if (saveInputField == 0)
     {
-        size_t len = strlen(saveNameInput);
-        if (len < sizeof(saveNameInput) - 1)
+        if (Input::IsKeyTrigger(KEY_INPUT_BACK))
         {
-            saveNameInput[len] = c;
-            saveNameInput[len + 1] = '\0';
+            size_t len = strlen(saveNameInput);
+            if (len > 0)
+                saveNameInput[len - 1] = '\0';
+        }
+
+        char c = GetTriggeredSaveInputChar(false);
+        if (c != '\0')
+        {
+            size_t len = strlen(saveNameInput);
+            if (len < sizeof(saveNameInput) - 1)
+            {
+                saveNameInput[len] = c;
+                saveNameInput[len + 1] = '\0';
+            }
+        }
+    }
+    else
+    {
+        // 2026-07-17: 説明欄はKeyInputから毎フレーム取得し、IMEで確定した日本語を保存用バッファへ反映する。
+        SyncSaveDescriptionFromKeyInput();
+        if (saveDescriptionKeyInput != -1 && CheckKeyInput(saveDescriptionKeyInput) != 0)
+        {
+            // 2026-07-23: IME変換確定のEnterでDxLib側が入力完了扱いになっても、保存はF5なので説明欄を続けて編集できるよう戻す。
+            SetActiveKeyInput(saveDescriptionKeyInput);
         }
     }
     
-    if (Input::IsKeyTrigger(KEY_INPUT_F5) && saveNameInput[0] != '\0')
-    {
-
-        strcpy_s(gameCurrentMapName, 64, saveNameInput);
-        SaveMapAsCurrentName();
-        SyncSelectedMapNameToCurrent();
-        saveNameInputActive = false;
-    }
+    if (Input::IsKeyTrigger(KEY_INPUT_F5))
+        CommitSaveNameInput();
 
 }
-
 static void UpdateKitNameInput()
 {
     if (Input::IsKeyTrigger(KEY_INPUT_F9))
@@ -1767,16 +2541,48 @@ static void UpdateKitNameInput()
     }
 }
 
+static void DrawSaveInputButton(int x1, int y1, int x2, int y2, const char* text, bool primary)
+{
+    int fill = primary ? GetColor(45, 120, 210) : GetColor(55, 60, 70);
+    int border = primary ? GetColor(140, 205, 255) : GetColor(150, 160, 175);
+    DrawBox(x1, y1, x2, y2, fill, TRUE);
+    DrawBox(x1, y1, x2, y2, border, FALSE);
+    DrawString(x1 + 28, y1 + 8, text, GetColor(255, 255, 255));
+}
+
 static void DrawSaveNameInput()
 {
     if (!saveNameInputActive)
         return;
 
-    DrawBox(320, 270, 960, 390, GetColor(10, 10, 10), TRUE);
-    DrawBox(320, 270, 960, 390, GetColor(255, 255, 255), FALSE);
-    DrawString(350, 292, "SAVE NAME", GetColor(255, 255, 0));
-    DrawFormatString(350, 326, GetColor(255, 255, 255), "%s.csv", saveNameInput[0] != '\0' ? saveNameInput : "_");
-    DrawString(350, 356, "F5: SAVE   BACKSPACE: DELETE   F9: CANCEL", GetColor(180, 220, 255));
+    // 2026-07-17: 保存時にマップ名と説明を同じダイアログで入力できるよう表示を拡張する。
+    DrawBox(330, 236, 930, 450, GetColor(10, 10, 10), TRUE);
+    DrawBox(330, 236, 930, 450, GetColor(255, 255, 255), FALSE);
+    DrawString(360, 260, "マップ情報の保存", GetColor(255, 255, 0));
+
+    int nameColor = saveInputField == 0 ? GetColor(255, 255, 120) : GetColor(220, 220, 220);
+    int descColor = saveInputField == 1 ? GetColor(255, 255, 120) : GetColor(220, 220, 220);
+    DrawBox(360, 294, 900, 328, saveInputField == 0 ? GetColor(42, 48, 58) : GetColor(22, 25, 32), TRUE);
+    DrawBox(360, 294, 900, 328, saveInputField == 0 ? GetColor(255, 255, 120) : GetColor(90, 95, 105), FALSE);
+    DrawString(378, 303, saveInputField == 0 ? "> マップ名" : "  マップ名", nameColor);
+    DrawFormatString(506, 303, GetColor(255, 255, 255), "%s.csv", saveNameInput[0] != '\0' ? saveNameInput : "_");
+
+    DrawBox(360, 338, 900, 378, saveInputField == 1 ? GetColor(42, 48, 58) : GetColor(22, 25, 32), TRUE);
+    DrawBox(360, 338, 900, 378, saveInputField == 1 ? GetColor(255, 255, 120) : GetColor(90, 95, 105), FALSE);
+    DrawString(378, 350, saveInputField == 1 ? "> 説明" : "  説明", descColor);
+    if (saveInputField == 1 && saveDescriptionKeyInput != -1)
+    {
+        // 2026-07-17: KeyInputの描画を使い、IME変換中の日本語候補も説明欄に表示する。
+        DrawKeyInputString(506, 350, saveDescriptionKeyInput, TRUE);
+    }
+    else
+    {
+        DrawFormatString(506, 350, GetColor(255, 255, 255), "%s", saveDescriptionInput[0] != '\0' ? saveDescriptionInput : "_");
+    }
+
+    DrawSaveInputButton(680, 404, 800, 432, "保存", true);
+    DrawSaveInputButton(812, 404, 912, 432, "戻る", false);
+    DrawString(360, 386, "TAB/クリック: 入力欄   F5: 保存   BACKSPACE: 削除   F9: 戻る", GetColor(180, 220, 255));
 }
 
 static void DrawKitNameInput()
@@ -1802,11 +2608,17 @@ void InitEditor()
     {
         modelHandles[i] = -1;
         paletteTex[i] = -1;
+        modelOffsetX[i] = 0.0f;
+        modelOffsetZ[i] = 0.0f;
+        modelOffsetY[i] = 0.0f;
     }
 
     camRotY = 0.785398f;
     camRotX = 0.45f;
     camDist = 6500.0f;
+    // 2026-07-21: エディター開始時はマップ中央を見る状態から始める。
+    camTargetX = BLOCK_NUM_X * BLOCK_SIZE * 0.5f;
+    camTargetZ = BLOCK_NUM_Z * BLOCK_SIZE * 0.5f;
 
     LoadEditorModelConfig();
     RefreshMapNameList();
@@ -1847,7 +2659,9 @@ void UpdateEditor()
     int rClick = mouse & MOUSE_INPUT_RIGHT;
 
     bool lTrigger = lClick && !(oldMouse & MOUSE_INPUT_LEFT);
-    bool rTrigger = rClick && !(oldMouse & MOUSE_INPUT_RIGHT);
+    bool rawRTrigger = rClick && !(oldMouse & MOUSE_INPUT_RIGHT);
+    bool rawRRelease = !rClick && (oldMouse & MOUSE_INPUT_RIGHT);
+    bool rTrigger = false;
 
     bool ctrl =
         CheckHitKey(KEY_INPUT_LCONTROL) ||
@@ -1856,6 +2670,9 @@ void UpdateEditor()
     bool shift =
         CheckHitKey(KEY_INPUT_LSHIFT) ||
         CheckHitKey(KEY_INPUT_RSHIFT);
+
+    // 2026-07-21: 未選択時だけ左ドラッグをカメラ移動にするため、現在タブで有効な素材選択かを先に判定する。
+    bool hasModelSelected = GetSelectedModel() >= 0;
 
     // 2026-06-25: 新しい上下左右パネルを除いた場所だけを3Dワークスペースとして扱う。
     // 折りたたんだ右パネル領域もレイキャスト可能になる。
@@ -1909,15 +2726,56 @@ void UpdateEditor()
 
 #pragma region カメラ操作
 
-    if (shift && lClick)
-    {
-        camRotY += (mx - oldMX) * 0.01f;
-        camRotX += (my - oldMY) * 0.01f;
+    static bool rightCameraDragging = false;
+    static int rightMouseStartX = 0;
+    static int rightMouseStartY = 0;
+    static int rightMouseHoldFrame = 0;
 
-        if (camRotX > 1.2f) camRotX = 1.2f;
-        if (camRotX < -1.2f) camRotX = -1.2f;
+    if (rawRTrigger)
+    {
+        // 2026-07-22: 右クリックは短押し削除と長押しカメラ回転を分けるため、押し始め位置と時間を記録する。
+        rightCameraDragging = false;
+        rightMouseStartX = mx;
+        rightMouseStartY = my;
+        rightMouseHoldFrame = 0;
     }
 
+    if (rClick)
+    {
+        rightMouseHoldFrame++;
+        int dragX = mx - rightMouseStartX;
+        int dragY = my - rightMouseStartY;
+        if (!isUI && !ctrl && (rightCameraDragging || dragX * dragX + dragY * dragY >= 36))
+        {
+            // 2026-07-22: Shift+左ドラッグをやめ、右クリック長押し/ドラッグで視点回転できるようにする。
+            rightCameraDragging = true;
+            camRotY += (mx - oldMX) * 0.01f;
+            camRotX += (my - oldMY) * 0.01f;
+
+            if (camRotX > 1.2f) camRotX = 1.2f;
+            if (camRotX < -1.2f) camRotX = -1.2f;
+        }
+    }
+
+    if (rawRRelease)
+    {
+        // 2026-07-22: カメラ操作にならなかった短い右クリックだけを、従来の削除/キャンセル入力として扱う。
+        rTrigger = !rightCameraDragging;
+        rightCameraDragging = false;
+        rightMouseHoldFrame = 0;
+    }
+
+    if (!hasModelSelected && !isUI && !ctrl && !pasteMode && !collisionEditMode && !selectMode && !eraserMode && lClick)
+    {
+        // 2026-07-21: 何も選んでいない時の左ドラッグは、見ている方向基準でエディターカメラを平行移動する。
+        float dragX = (float)(mx - oldMX);
+        float panSpeed = max(4.0f, camDist * 0.0015f);
+        float rightX = cosf(camRotY);
+        float rightZ = -sinf(camRotY);
+
+        camTargetX += rightX * dragX * panSpeed;
+        camTargetZ += rightZ * dragX * panSpeed;
+    }
     oldMX = mx;
     oldMY = my;
 
@@ -1925,8 +2783,12 @@ void UpdateEditor()
     bool wheelUsedByUI = isUI && UpdateEditorUIWheel(mx, my, wheel);
     // 2026-06-15: 右側素材欄のスクロール中は、同じホイール入力でカメラ距離を変えない。
     if (!wheelUsedByUI && !(collisionEditMode && collisionEdgeEditMode))
-        camDist -= wheel * 300.0f;
-    camDist = max(1000.0f, min(10000.0f, camDist));
+    {
+        // 2026-07-21: ホイール下方向で十分に引けるよう、距離に応じたズーム量と広めの上限に調整する。
+        float zoomStep = max(300.0f, camDist * 0.08f);
+        camDist -= wheel * zoomStep;
+    }
+    camDist = max(800.0f, min(24000.0f, camDist));
 
 #pragma endregion
 
@@ -1947,6 +2809,11 @@ void UpdateEditor()
         // 2026-06-25: 離れた複数選択をEscで解除できるよう追加。
         ClearMultiSelection();
     }
+    else if (!pasteMode && Input::IsKeyTrigger(KEY_INPUT_ESCAPE) && selectedModel >= 0)
+    {
+        // 2026-07-21: Escで素材選択を外し、左ドラッグのカメラ移動へすぐ切り替えられるようにする。
+        selectedModel = -1;
+    }
 
     if (ctrl && Input::IsKeyTrigger(KEY_INPUT_Z))
     {
@@ -1965,8 +2832,7 @@ void UpdateEditor()
 
     if (Input::IsKeyTrigger(KEY_INPUT_R))
     {
-        // 2026-06-24: 貼り付け中はRでコピー範囲を回し、通常時は従来どおり選択モデルを回す。
-        // 2026-06-25: Shift+Rは複数選択または範囲選択の中身だけを回転する。
+        // 2026-06-24:
         if (pasteMode)
             copyRotation = (copyRotation + 1) % 4;
         else if (shift && multiSelectCount > 0)
@@ -1980,6 +2846,10 @@ void UpdateEditor()
     if (Input::IsKeyTrigger(KEY_INPUT_B))
         brushMode = !brushMode;
 
+    // 2026-07-08: ENEMYタブでPを押すと、敵配置ではなく巡回ポイント編集に切り替える。
+    if (currentTab == ENEMY && Input::IsKeyTrigger(KEY_INPUT_P))
+        enemyPatrolEditMode = !enemyPatrolEditMode;
+
     if (!ctrl && Input::IsKeyTrigger(KEY_INPUT_V))
     {
         selectMode = !selectMode;
@@ -1992,7 +2862,8 @@ void UpdateEditor()
         ClearCurrentLayer();
     }
 
-    if (Input::IsKeyTrigger(KEY_INPUT_RIGHT))
+    // 2026-07-21: 矢印キー単体でマップ切替確認に入ると、配置操作が止まったように見えるためCtrl同時押しに限定する。
+    if (ctrl && Input::IsKeyTrigger(KEY_INPUT_RIGHT))
     {
         if (mapNameCount > 0)
         {
@@ -2006,7 +2877,8 @@ void UpdateEditor()
             RequestEditorLoadMapFromList(nextMapListIndex);
         }
     }
-    if (Input::IsKeyTrigger(KEY_INPUT_LEFT))
+    // 2026-07-21: 左方向のマップ切替も右方向と同じくCtrl同時押しにして、通常編集操作を邪魔しない。
+    if (ctrl && Input::IsKeyTrigger(KEY_INPUT_LEFT))
     {
         if (mapNameCount > 0)
         {
@@ -2046,8 +2918,9 @@ void UpdateEditor()
 
 #pragma region UIクリック
 
-    if (lTrigger && isUI)
-        UpdateEditorUI(mx, my, true);
+    // 2026-07-22: 色変更UIは長押し/ドラッグ調整、通常ボタンは押した瞬間だけ処理できるようUIへ押下状態を渡す。
+    if (isUI || (oldMouse & MOUSE_INPUT_LEFT))
+        UpdateEditorUI(mx, my, lClick);
 
 #pragma endregion
 
@@ -2093,22 +2966,13 @@ void UpdateEditor()
     int x = hoverX;
     int z = hoverZ;
     bool canAccess = IsMapPosValid(layer, z, x);
+    bool isEnemyPatrolEditing = currentTab == ENEMY && enemyPatrolEditMode;
+    // 2026-07-22: 巡回編集ONのままでも、まだ対象敵を選んでいない時は敵本体を配置できるようにする。
+    bool canPlaceEnemyBeforePatrolTarget = isEnemyPatrolEditing && !IsSelectedPatrolEnemyValid();
 
-    if (shift)
-    {
-        // 2026-06-29: Shiftは視点回転専用にするため、選択・配置・削除・当たり判定ドラッグを開始しない。
-        selecting = false;
-        collisionBoxDragging = false;
-        collisionBoxDragMode = 0;
-        lastBrushX = -1;
-        lastBrushZ = -1;
-        lastBrushLayer = -1;
-        oldMouse = mouse;
-        oldClick = lClick;
-        return;
-    }
-
-    if (!pasteMode && !collisionEditMode && !isUI && canAccess && ctrl && lTrigger)
+    
+    // 2026-07-22: 段差6は隣の上層床へ自動接続するため、Lキーでの手動ON/OFF処理は使わない。
+if (!pasteMode && !collisionEditMode && !isUI && canAccess && ctrl && lTrigger)
     {
         // 2026-06-29: Shiftを視点回転専用に残すため、複数選択はShift+クリックからCtrl+クリックへ移す。
         ToggleMultiSelectionCell(layer, z, x);
@@ -2121,6 +2985,40 @@ void UpdateEditor()
         // 2026-06-25: 複数選択中の右クリックは削除ではなく選択解除にする。
         ClearMultiSelection();
         rTrigger = false;
+    }
+
+    // 2026-07-08: 巡回編集中は、敵クリックで対象選択、空きマス左クリックでポイント追加、右クリックでポイント削除。
+    if (!pasteMode && !collisionEditMode && !selectMode && !shift && !isUI &&
+        isEnemyPatrolEditing && canAccess)
+    {
+        if (lTrigger)
+        {
+            if (EnemyMap[layer][z][x] >= 0)
+            {
+                SelectPatrolEnemy(layer, z, x);
+                // 2026-07-22: 敵を巡回対象として選んだクリックが、そのまま敵配置へ流れないようにする。
+                lTrigger = false;
+            }
+            else if (IsSelectedPatrolEnemyValid())
+            {
+                PushUndo();
+                AddPatrolPointToSelectedEnemy(z, x);
+                lTrigger = false;
+            }
+            else
+            {
+                // 2026-07-22: 対象敵が未選択の時はクリックを消費せず、下の敵配置処理へ渡す。
+            }
+        }
+        else if (rTrigger)
+        {
+            if (IsSelectedPatrolEnemyValid())
+            {
+                PushUndo();
+                RemovePatrolPointFromSelectedEnemy(z, x);
+            }
+            rTrigger = false;
+        }
     }
 
 
@@ -2164,6 +3062,8 @@ void UpdateEditor()
             // 2026-06-24: 1回の配置を1つのUndo単位にする。配置後も連続スタンプできる。
             PushUndo();
             PasteSelectionRotated(layer, x, z, copyRotation);
+            // 2026-07-22: コピー配置を1回置いたら、元の範囲選択の青枠を残さない。
+            ClearRangeSelectionRect();
         }
     }
 
@@ -2174,6 +3074,7 @@ void UpdateEditor()
 
     if (selectMode && !pasteMode && !shift && !isUI && canAccess)
     {
+        // 2026-07-21: 範囲選択は左クリックドラッグで行い、コピー後の配置も左クリックで確定できる流れに戻す。
         if (lTrigger)
         {
             selecting = true;
@@ -2345,16 +3246,20 @@ void UpdateEditor()
         lTrigger &&
         canAccess;
 
-    if (!pasteMode && !collisionEditMode && !selectMode && !shift && !isUI && (singlePlace || brushPlace))
+    if (hasModelSelected && !eraserMode && !pasteMode && !collisionEditMode && !selectMode && !shift && !isUI && (!isEnemyPatrolEditing || canPlaceEnemyBeforePatrolTarget) && (singlePlace || brushPlace))
     {
         PushUndo();
 
         int model = GetSelectedModel();
+        if (IsEditorPlacementDisabled(currentTab, model))
+            return;
 
         if (currentTab == FLOOR)
         {
             FloorMap[layer][z][x] = model;
             FloorRot[layer][z][x] = currentRot;
+            // 2026-07-21: 配置時点の色変更ボタンの色を床へ保存する。
+            FloorColorMap[layer][z][x] = editorColorIndex;
         }
         else if (currentTab == WALL)
         {
@@ -2363,32 +3268,45 @@ void UpdateEditor()
             {
                 // 2026-06-28: 同じセルの同じ辺に壁を重ねると位置がずれて見えるため、追加ではなく置き換える。
                 WallMapA[layer][z][x] = model;
+                WallColorMapA[layer][z][x] = editorColorIndex;
             }
             else if (WallMapB[layer][z][x] >= 0 && WallRotB[layer][z][x] == wallRot)
             {
                 // 2026-06-28: 壁B側も同じ辺は二重配置せず、見た目とミニマップの重なりを防ぐ。
                 WallMapB[layer][z][x] = model;
+                WallColorMapB[layer][z][x] = editorColorIndex;
             }
             else if (WallMapA[layer][z][x] == -1)
             {
                 WallMapA[layer][z][x] = model;
                 WallRotA[layer][z][x] = wallRot;
+                WallColorMapA[layer][z][x] = editorColorIndex;
             }
             else if (WallMapB[layer][z][x] == -1)
             {
                 WallMapB[layer][z][x] = model;
                 WallRotB[layer][z][x] = wallRot;
+                WallColorMapB[layer][z][x] = editorColorIndex;
             }
             else
             {
                 WallMapB[layer][z][x] = model;
                 WallRotB[layer][z][x] = wallRot;
+                WallColorMapB[layer][z][x] = editorColorIndex;
             }
         }
         else if (currentTab == CORNER)
         {
             CornerMap[layer][z][x] = model;
             CornerRot[layer][z][x] = currentRot;
+            CornerColorMap[layer][z][x] = editorColorIndex;
+            // 2026-07-23: 角だけ置くと床が抜けて見えるため、床が空なら標準床も同時に置く。
+            if (FloorMap[layer][z][x] < 0)
+            {
+                FloorMap[layer][z][x] = 0;
+                FloorRot[layer][z][x] = 0;
+                FloorColorMap[layer][z][x] = 0;
+            }
             // 2026-05-13: コーナー配置時に当たり判定調整値を標準値へ戻すため追加。
             CollisionCornerScaleMap[layer][z][x] = 100;
             CollisionCornerThicknessMap[layer][z][x] = 100;
@@ -2398,19 +3316,21 @@ void UpdateEditor()
         {
             DecoMap[layer][z][x] = model;
             DecoRot[layer][z][x] = currentRot;
+            DecoColorMap[layer][z][x] = editorColorIndex;
         }
-        /*
         else if (currentTab == ENEMY)
         {
-            if (IsEditorEnemyModelId(model))
+            // 2026-07-23: 敵は足場がないセルには置けないようにする。
+            if (IsEditorEnemyModelId(model) && FloorMap[layer][z][x] >= 0)
             {
                 EnemyMap[layer][z][x] = GetEditorEnemyIdFromModel(model);
+                ClearEnemyPatrolPoints(layer, z, x);
+                SelectPatrolEnemy(layer, z, x);
             }
         }
-        */
         else if (currentTab == EVENT)
         {
-            PlaceEvent(layer, z, x, model);
+            PlaceEvent(layer, z, x, GetEditorEventIdFromModel(model));
         }
 
         lastBrushX = x;
@@ -2430,14 +3350,24 @@ void UpdateEditor()
 
 #pragma region 削除
 
-    if (!pasteMode && !collisionEditMode && !selectMode && !shift && !isUI && rTrigger && canAccess)
+    bool eraserClick = eraserMode && (singlePlace || brushPlace);
+    if (!pasteMode && !collisionEditMode && !selectMode && !shift && !isUI && !isEnemyPatrolEditing && (rTrigger || eraserClick) && canAccess)
     {
         PushUndo();
 
-        if (currentTab == FLOOR)
+        if (eraserMode)
+        {
+            if (eraserTarget == ERASER_TARGET_ALL)
+                ClearEditorCellAllKinds(layer, z, x);
+            else
+                ClearEditorCellByTarget(layer, z, x, eraserTarget);
+            MarkEditorMapDirty();
+        }
+        else if (currentTab == FLOOR)
         {
             FloorMap[layer][z][x] = -1;
             FloorRot[layer][z][x] = 0;
+            FloorColorMap[layer][z][x] = 0;
         }
         else if (currentTab == WALL)
         {
@@ -2447,17 +3377,20 @@ void UpdateEditor()
             {
                 WallMapA[layer][z][x] = -1;
                 WallRotA[layer][z][x] = 0;
+                WallColorMapA[layer][z][x] = 0;
             }
             if (WallMapB[layer][z][x] >= 0 && WallRotB[layer][z][x] == wallRot)
             {
                 WallMapB[layer][z][x] = -1;
                 WallRotB[layer][z][x] = 0;
+                WallColorMapB[layer][z][x] = 0;
             }
         }
         else if (currentTab == CORNER)
         {
             CornerMap[layer][z][x] = -1;
             CornerRot[layer][z][x] = 0;
+            CornerColorMap[layer][z][x] = 0;
             // 2026-05-13: コーナー削除時に当たり判定調整値も標準値へ戻すため追加。
             CollisionCornerScaleMap[layer][z][x] = 100;
             CollisionCornerThicknessMap[layer][z][x] = 100;
@@ -2466,28 +3399,37 @@ void UpdateEditor()
         else if (currentTab == DECO)
         {
             DecoMap[layer][z][x] = -1;
+            ClimbLinkMap[layer][z][x] = 0;
             DecoRot[layer][z][x] = 0;
+            DecoColorMap[layer][z][x] = 0;
         }
-        /*
         else if (currentTab == ENEMY)
         {
             if (EnemyMap[layer][z][x] == GetEditorEnemyIdFromModel(GetSelectedModel()))
             {
                 EnemyMap[layer][z][x] = -1;
+                ClearEnemyPatrolPoints(layer, z, x);
+                if (selectedPatrolEnemyLayer == layer && selectedPatrolEnemyX == x && selectedPatrolEnemyZ == z)
+                {
+                    selectedPatrolEnemyLayer = -1;
+                    selectedPatrolEnemyX = -1;
+                    selectedPatrolEnemyZ = -1;
+                }
             }
         }
-        */
         else if (currentTab == EVENT)
         {
             if (EventMap[layer][z][x] == 0)
                 {
-                    startX = 0; startY = 0; startZ = 0;
+                    startX = -1; startY = -1; startZ = -1;
                 }
                 else if (EventMap[layer][z][x] == 1)
                 {
-                    goalX = 5; goalY = 0; goalZ = 5;
+                    goalX = -1; goalY = -1; goalZ = -1;
                 }
                 EventMap[layer][z][x] = -1;
+                EventRot[layer][z][x] = 0;
+                // 2026-07-21: EVENT削除時に回転値だけ残ると、次の扉配置で古い向きが混ざるため初期化する。
         }
     }
 
@@ -2503,4 +3445,24 @@ void UpdateEditor()
 #pragma region ===== 描画 =====
 
 #include "MapEditorRendering.inl"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

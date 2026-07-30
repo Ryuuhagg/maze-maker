@@ -1,4 +1,4 @@
-ï»¿#pragma region ===== ã‚³ãƒ”ãƒ¼å‡¦ç† =====
+#pragma region ===== ƒRƒs[ˆ— =====
 
 static void ClearCopyBuffer()
 {
@@ -15,19 +15,21 @@ static void ClearCopyBuffer()
             CopyWallMapB[z][x] = -1;
             CopyCornerMap[z][x] = -1;
             CopyDecoMap[z][x] = -1;
-            // 2026-06-11: ã‚³ãƒ”ãƒ¼åˆæœŸåŒ–æ™‚ã«å‰å›ã®æ•µé…ç½®ã‚’æ®‹ã•ãªã„ãŸã‚è¿½åŠ ã€‚
+            // 2026-06-11: ƒRƒs[‰Šú‰»‚É‘O‰ñ‚Ì“G”z’u‚ğc‚³‚È‚¢‚½‚ß’Ç‰ÁB
             // CopyEnemyMap[z][x] = -1;
             CopyEventMap[z][x] = -1;
-            // 2026-05-11: ã‚³ãƒ”ãƒ¼ç”¨ãƒãƒƒãƒ•ã‚¡åˆæœŸåŒ–æ™‚ã«å½“ãŸã‚Šåˆ¤å®šã®å¤ã„å€¤ã‚’æ®‹ã•ãªã„ãŸã‚è¿½åŠ ã€‚
+            CopyEventRot[z][x] = 0;
+            // 2026-07-21: ƒRƒs[‰Šú‰»‚ÉEVENT‰ñ“]‚àƒŠƒZƒbƒg‚µA”à‚ÌŒü‚«‚ª‘O‰ñƒRƒs[‚©‚çc‚ç‚È‚¢‚æ‚¤‚É‚·‚éB
+            // 2026-05-11: ƒRƒs[—pƒoƒbƒtƒ@‰Šú‰»‚É“–‚½‚è”»’è‚ÌŒÃ‚¢’l‚ğc‚³‚È‚¢‚½‚ß’Ç‰ÁB
             CopyCollisionMap[z][x] = -1;
-            // 2026-05-20: ã‚³ãƒ”ãƒ¼åˆæœŸåŒ–ã§ã‚‚BoxCollideré¢¨ã®èª¿æ•´å€¤ã‚’æ¨™æº–å€¤ã¸æˆ»ã™ã€‚
+            // 2026-05-20: ƒRƒs[‰Šú‰»‚Å‚àBoxCollider•—‚Ì’²®’l‚ğ•W€’l‚Ö–ß‚·B
             CopyCollisionBoxOffsetXMap[z][x] = 0;
             CopyCollisionBoxOffsetZMap[z][x] = 0;
             CopyCollisionBoxSizeXMap[z][x] = (int)BLOCK_SIZE;
             CopyCollisionBoxSizeZMap[z][x] = (int)BLOCK_SIZE;
-            // 2026-05-11: ã‚³ãƒ”ãƒ¼ç”¨ãƒãƒƒãƒ•ã‚¡åˆæœŸåŒ–æ™‚ã«è¾ºå½“ãŸã‚Šåˆ¤å®šã®å¤ã„å€¤ã‚’æ®‹ã•ãªã„ãŸã‚è¿½åŠ ã€‚
+            // 2026-05-11: ƒRƒs[—pƒoƒbƒtƒ@‰Šú‰»‚É•Ó“–‚½‚è”»’è‚ÌŒÃ‚¢’l‚ğc‚³‚È‚¢‚½‚ß’Ç‰ÁB
             CopyCollisionEdgeMap[z][x] = -1;
-            // 2026-05-13: ã‚³ãƒ”ãƒ¼ç”¨ãƒãƒƒãƒ•ã‚¡åˆæœŸåŒ–æ™‚ã«ã‚³ãƒ¼ãƒŠãƒ¼å½“ãŸã‚Šèª¿æ•´å€¤ã®å¤ã„å€¤ã‚’æ®‹ã•ãªã„ãŸã‚è¿½åŠ ã€‚
+            // 2026-05-13: ƒRƒs[—pƒoƒbƒtƒ@‰Šú‰»‚ÉƒR[ƒi[“–‚½‚è’²®’l‚ÌŒÃ‚¢’l‚ğc‚³‚È‚¢‚½‚ß’Ç‰ÁB
             CopyCollisionCornerScaleMap[z][x] = 100;
             CopyCollisionCornerThicknessMap[z][x] = 100;
             CopyCollisionCornerOffsetMap[z][x] = 0;
@@ -48,13 +50,62 @@ static void ClearCopyBuffer()
 
 static void CopySelection()
 {
-    if (!HasValidSelection())
+    bool hasRangeSelection = HasValidSelection();
+    bool hasMultiSelection = multiSelectCount > 0;
+    if (!hasRangeSelection && !hasMultiSelection)
         return;
 
-    int minX = min(selectStartX, selectEndX);
-    int maxX = max(selectStartX, selectEndX);
-    int minZ = min(selectStartZ, selectEndZ);
-    int maxZ = max(selectStartZ, selectEndZ);
+    int sourceLayer = selectLayer;
+    int minX = 0;
+    int maxX = 0;
+    int minZ = 0;
+    int maxZ = 0;
+
+    if (hasRangeSelection)
+    {
+        minX = min(selectStartX, selectEndX);
+        maxX = max(selectStartX, selectEndX);
+        minZ = min(selectStartZ, selectEndZ);
+        maxZ = max(selectStartZ, selectEndZ);
+    }
+    else
+    {
+        bool found = false;
+        for (int layer = 0; layer < BLOCK_NUM_Y && !found; layer++)
+        {
+            for (int z = 0; z < BLOCK_NUM_Z && !found; z++)
+            {
+                for (int x = 0; x < BLOCK_NUM_X; x++)
+                {
+                    if (multiSelectMap[layer][z][x])
+                    {
+                        sourceLayer = layer;
+                        minX = maxX = x;
+                        minZ = maxZ = z;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!found)
+            return;
+
+        for (int z = 0; z < BLOCK_NUM_Z; z++)
+        {
+            for (int x = 0; x < BLOCK_NUM_X; x++)
+            {
+                if (!multiSelectMap[sourceLayer][z][x])
+                    continue;
+
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (z < minZ) minZ = z;
+                if (z > maxZ) maxZ = z;
+            }
+        }
+    }
 
     ClearCopyBuffer();
 
@@ -68,47 +119,45 @@ static void CopySelection()
             int srcX = minX + x;
             int srcZ = minZ + z;
 
-            CopyFloorMap[z][x] = FloorMap[selectLayer][srcZ][srcX];
-            CopyFloorRot[z][x] = FloorRot[selectLayer][srcZ][srcX];
+            if (!hasRangeSelection && !multiSelectMap[sourceLayer][srcZ][srcX])
+                continue;
 
-            CopyWallMapA[z][x] = WallMapA[selectLayer][srcZ][srcX];
-            CopyWallMapB[z][x] = WallMapB[selectLayer][srcZ][srcX];
-            CopyWallRotA[z][x] = WallRotA[selectLayer][srcZ][srcX];
-            CopyWallRotB[z][x] = WallRotB[selectLayer][srcZ][srcX];
+            CopyFloorMap[z][x] = FloorMap[sourceLayer][srcZ][srcX];
+            CopyFloorRot[z][x] = FloorRot[sourceLayer][srcZ][srcX];
 
-            CopyCornerMap[z][x] = CornerMap[selectLayer][srcZ][srcX];
-            CopyCornerRot[z][x] = CornerRot[selectLayer][srcZ][srcX];
+            CopyWallMapA[z][x] = WallMapA[sourceLayer][srcZ][srcX];
+            CopyWallMapB[z][x] = WallMapB[sourceLayer][srcZ][srcX];
+            CopyWallRotA[z][x] = WallRotA[sourceLayer][srcZ][srcX];
+            CopyWallRotB[z][x] = WallRotB[sourceLayer][srcZ][srcX];
 
-            CopyDecoMap[z][x] = DecoMap[selectLayer][srcZ][srcX];
-            CopyDecoRot[z][x] = DecoRot[selectLayer][srcZ][srcX];
+            CopyCornerMap[z][x] = CornerMap[sourceLayer][srcZ][srcX];
+            CopyCornerRot[z][x] = CornerRot[sourceLayer][srcZ][srcX];
 
-            // 2026-06-11: ç¯„å›²ã‚³ãƒ”ãƒ¼ã§ã‚‚æ•µé…ç½®ã‚’EVENTã¨ã¯åˆ¥ã«ä¿æŒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
-            // CopyEnemyMap[z][x] = EnemyMap[selectLayer][srcZ][srcX];
-            CopyEventMap[z][x] = EventMap[selectLayer][srcZ][srcX];
-            // 2026-05-11: ç¯„å›²ã‚³ãƒ”ãƒ¼æ™‚ã«æ‰‹å‹•å½“ãŸã‚Šåˆ¤å®šã‚‚ä¸€ç·’ã«ä¿æŒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
-            CopyCollisionMap[z][x] = CollisionMap[selectLayer][srcZ][srcX];
-            // 2026-05-20: ç¯„å›²ã‚³ãƒ”ãƒ¼ã§BoxCollideré¢¨ã®èª¿æ•´å€¤ã‚‚æ‹¾ã†ãŸã‚è¿½åŠ ã€‚
-            CopyCollisionBoxOffsetXMap[z][x] = CollisionBoxOffsetXMap[selectLayer][srcZ][srcX];
-            CopyCollisionBoxOffsetZMap[z][x] = CollisionBoxOffsetZMap[selectLayer][srcZ][srcX];
-            CopyCollisionBoxSizeXMap[z][x] = CollisionBoxSizeXMap[selectLayer][srcZ][srcX];
-            CopyCollisionBoxSizeZMap[z][x] = CollisionBoxSizeZMap[selectLayer][srcZ][srcX];
-            // 2026-05-11: ç¯„å›²ã‚³ãƒ”ãƒ¼æ™‚ã«è¾ºå½“ãŸã‚Šåˆ¤å®šã‚‚ä¸€ç·’ã«ä¿æŒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
-            CopyCollisionEdgeMap[z][x] = CollisionEdgeMap[selectLayer][srcZ][srcX];
-            // 2026-05-13: ç¯„å›²ã‚³ãƒ”ãƒ¼æ™‚ã«ã‚³ãƒ¼ãƒŠãƒ¼å½“ãŸã‚Šèª¿æ•´å€¤ã‚‚ä¸€ç·’ã«ä¿æŒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
-            CopyCollisionCornerScaleMap[z][x] = CollisionCornerScaleMap[selectLayer][srcZ][srcX];
-            CopyCollisionCornerThicknessMap[z][x] = CollisionCornerThicknessMap[selectLayer][srcZ][srcX];
-            CopyCollisionCornerOffsetMap[z][x] = CollisionCornerOffsetMap[selectLayer][srcZ][srcX];
+            CopyDecoMap[z][x] = DecoMap[sourceLayer][srcZ][srcX];
+            CopyDecoRot[z][x] = DecoRot[sourceLayer][srcZ][srcX];
+
+            CopyEventMap[z][x] = EventMap[sourceLayer][srcZ][srcX];
+            CopyEventRot[z][x] = EventRot[sourceLayer][srcZ][srcX];
+
+            CopyCollisionMap[z][x] = CollisionMap[sourceLayer][srcZ][srcX];
+            CopyCollisionBoxOffsetXMap[z][x] = CollisionBoxOffsetXMap[sourceLayer][srcZ][srcX];
+            CopyCollisionBoxOffsetZMap[z][x] = CollisionBoxOffsetZMap[sourceLayer][srcZ][srcX];
+            CopyCollisionBoxSizeXMap[z][x] = CollisionBoxSizeXMap[sourceLayer][srcZ][srcX];
+            CopyCollisionBoxSizeZMap[z][x] = CollisionBoxSizeZMap[sourceLayer][srcZ][srcX];
+            CopyCollisionEdgeMap[z][x] = CollisionEdgeMap[sourceLayer][srcZ][srcX];
+            CopyCollisionCornerScaleMap[z][x] = CollisionCornerScaleMap[sourceLayer][srcZ][srcX];
+            CopyCollisionCornerThicknessMap[z][x] = CollisionCornerThicknessMap[sourceLayer][srcZ][srcX];
+            CopyCollisionCornerOffsetMap[z][x] = CollisionCornerOffsetMap[sourceLayer][srcZ][srcX];
             for (int edge = 0; edge < 4; edge++)
             {
-                CopyCollisionEdgeScaleMap[z][x][edge] = CollisionEdgeScaleMap[selectLayer][srcZ][srcX][edge];
-                CopyCollisionEdgeThicknessMap[z][x][edge] = CollisionEdgeThicknessMap[selectLayer][srcZ][srcX][edge];
+                CopyCollisionEdgeScaleMap[z][x][edge] = CollisionEdgeScaleMap[sourceLayer][srcZ][srcX][edge];
+                CopyCollisionEdgeThicknessMap[z][x][edge] = CollisionEdgeThicknessMap[sourceLayer][srcZ][srcX][edge];
             }
         }
     }
 
     hasCopyData = true;
 }
-
 static void PasteSelection(int dstLayer, int dstX, int dstZ)
 {
     if (!hasCopyData)
@@ -138,19 +187,20 @@ static void PasteSelection(int dstLayer, int dstX, int dstZ)
             DecoMap[dstLayer][targetZ][targetX] = CopyDecoMap[z][x];
             DecoRot[dstLayer][targetZ][targetX] = CopyDecoRot[z][x];
 
-            // 2026-06-11: ç¯„å›²è²¼ã‚Šä»˜ã‘ã§ã‚‚æ•µé…ç½®ã‚’EnemyMapã¸å¾©å…ƒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+            // 2026-06-11: ”ÍˆÍ“\‚è•t‚¯‚Å‚à“G”z’u‚ğEnemyMap‚Ö•œŒ³‚·‚é‚½‚ß’Ç‰ÁB
             // EnemyMap[dstLayer][targetZ][targetX] = CopyEnemyMap[z][x];
-            EventMap[dstLayer][targetZ][targetX] = CopyEventMap[z][x];
-            // 2026-05-11: è²¼ã‚Šä»˜ã‘æ™‚ã«æ‰‹å‹•å½“ãŸã‚Šåˆ¤å®šã‚‚åŒã˜ä½ç½®ã¸å¾©å…ƒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+            PlaceEventWithRot(dstLayer, targetZ, targetX, CopyEventMap[z][x], CopyEventRot[z][x]);
+            // 2026-07-21: ”ÍˆÍ“\‚è•t‚¯‚Å‚àEVENT‚ÌŒü‚«‚ğ•œŒ³‚·‚é‚½‚ß’Ç‰ÁB
+            // 2026-05-11: “\‚è•t‚¯‚Éè“®“–‚½‚è”»’è‚à“¯‚¶ˆÊ’u‚Ö•œŒ³‚·‚é‚½‚ß’Ç‰ÁB
             CollisionMap[dstLayer][targetZ][targetX] = CopyCollisionMap[z][x];
-            // 2026-05-20: ç¯„å›²è²¼ã‚Šä»˜ã‘ã§BoxCollideré¢¨ã®èª¿æ•´å€¤ã‚‚å¾©å…ƒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+            // 2026-05-20: ”ÍˆÍ“\‚è•t‚¯‚ÅBoxCollider•—‚Ì’²®’l‚à•œŒ³‚·‚é‚½‚ß’Ç‰ÁB
             CollisionBoxOffsetXMap[dstLayer][targetZ][targetX] = CopyCollisionBoxOffsetXMap[z][x];
             CollisionBoxOffsetZMap[dstLayer][targetZ][targetX] = CopyCollisionBoxOffsetZMap[z][x];
             CollisionBoxSizeXMap[dstLayer][targetZ][targetX] = CopyCollisionBoxSizeXMap[z][x];
             CollisionBoxSizeZMap[dstLayer][targetZ][targetX] = CopyCollisionBoxSizeZMap[z][x];
-            // 2026-05-11: è²¼ã‚Šä»˜ã‘æ™‚ã«è¾ºå½“ãŸã‚Šåˆ¤å®šã‚‚åŒã˜ä½ç½®ã¸å¾©å…ƒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+            // 2026-05-11: “\‚è•t‚¯‚É•Ó“–‚½‚è”»’è‚à“¯‚¶ˆÊ’u‚Ö•œŒ³‚·‚é‚½‚ß’Ç‰ÁB
             CollisionEdgeMap[dstLayer][targetZ][targetX] = CopyCollisionEdgeMap[z][x];
-            // 2026-05-13: è²¼ã‚Šä»˜ã‘æ™‚ã«ã‚³ãƒ¼ãƒŠãƒ¼å½“ãŸã‚Šèª¿æ•´å€¤ã‚‚åŒã˜ä½ç½®ã¸å¾©å…ƒã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+            // 2026-05-13: “\‚è•t‚¯‚ÉƒR[ƒi[“–‚½‚è’²®’l‚à“¯‚¶ˆÊ’u‚Ö•œŒ³‚·‚é‚½‚ß’Ç‰ÁB
             CollisionCornerScaleMap[dstLayer][targetZ][targetX] = CopyCollisionCornerScaleMap[z][x];
             CollisionCornerThicknessMap[dstLayer][targetZ][targetX] = CopyCollisionCornerThicknessMap[z][x];
             CollisionCornerOffsetMap[dstLayer][targetZ][targetX] = CopyCollisionCornerOffsetMap[z][x];
@@ -163,8 +213,8 @@ static void PasteSelection(int dstLayer, int dstX, int dstZ)
     }
 }
 
-// 2026-06-24: ã‚³ãƒ”ãƒ¼å…ƒé…åˆ—ã‚’å£Šã•ãšã€æç”»æ™‚ã¨é…ç½®æ™‚ã«ã ã‘åº§æ¨™å¤‰æ›ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
-// ä½•åº¦å›è»¢ã—ã¦ã‚‚å…ƒãƒ‡ãƒ¼ã‚¿ãŒåŠ£åŒ–ã›ãšã€ã‚­ãƒ£ãƒ³ã‚»ãƒ«ã‚‚çŠ¶æ…‹ã‚’æ¨ã¦ã‚‹ã ã‘ã§æ¸ˆã‚€ã€‚
+// 2026-06-24: ƒRƒs[Œ³”z—ñ‚ğ‰ó‚³‚¸A•`‰æ‚Æ”z’u‚É‚¾‚¯À•W•ÏŠ·‚·‚é‚½‚ß’Ç‰ÁB
+// ‰½“x‰ñ“]‚µ‚Ä‚àŒ³ƒf[ƒ^‚ª—ò‰»‚¹‚¸AƒLƒƒƒ“ƒZƒ‹‚àó‘Ô‚ğÌ‚Ä‚é‚¾‚¯‚ÅÏ‚ŞB
 static void GetRotatedCopyPosition(int srcX, int srcZ, int rotation, int& rotatedX, int& rotatedZ)
 {
     switch (rotation & 3)
@@ -223,8 +273,8 @@ static void RotateCopyBoxValues(
     }
 }
 
-// 2026-06-24: ãƒ¢ãƒ‡ãƒ«ã ã‘ã§ãªãæ‰‹å‹•ã‚³ãƒ©ã‚¤ãƒ€ãƒ¼ã®å‘ãã‚‚å«ã‚ã€ã‚³ãƒ”ãƒ¼ç¯„å›²å…¨ä½“ã‚’
-// å›è»¢ã—ãŸçŠ¶æ…‹ã§é…ç½®ã™ã‚‹ã€‚ç¯„å›²å¤–ã¸å‡ºãŸã‚»ãƒ«ã¯å¾“æ¥ã©ãŠã‚Šå®‰å…¨ã«èª­ã¿é£›ã°ã™ã€‚
+// 2026-06-24: ƒ‚ƒfƒ‹‚¾‚¯‚Å‚È‚­è“®ƒRƒ‰ƒCƒ_[‚ÌŒü‚«‚àŠÜ‚ßAƒRƒs[”ÍˆÍ‘S‘Ì‚ğ
+// ‰ñ“]‚µ‚½ó‘Ô‚Å”z’u‚·‚éB”ÍˆÍŠO‚Öo‚½ƒZƒ‹‚Í]—ˆ‚Ç‚¨‚èˆÀ‘S‚É“Ç‚İ”ò‚Î‚·B
 static void PasteSelectionRotated(int dstLayer, int dstX, int dstZ, int rotation)
 {
     if (!hasCopyData)
@@ -260,7 +310,8 @@ static void PasteSelectionRotated(int dstLayer, int dstX, int dstZ, int rotation
             DecoMap[dstLayer][targetZ][targetX] = CopyDecoMap[srcZ][srcX];
             DecoRot[dstLayer][targetZ][targetX] = (CopyDecoRot[srcZ][srcX] + rotation) & 3;
 
-            EventMap[dstLayer][targetZ][targetX] = CopyEventMap[srcZ][srcX];
+            PlaceEventWithRot(dstLayer, targetZ, targetX, CopyEventMap[srcZ][srcX], (CopyEventRot[srcZ][srcX] + rotation) & 3);
+            // 2026-07-21: ‰ñ“]“\‚è•t‚¯A”à‚È‚ÇEVENTƒ‚ƒfƒ‹‚ÌŒü‚«‚àƒRƒs[‘S‘Ì‚Ì‰ñ“]‚É‡‚í‚¹‚éB
             CollisionMap[dstLayer][targetZ][targetX] = CopyCollisionMap[srcZ][srcX];
 
             RotateCopyBoxValues(
@@ -274,8 +325,8 @@ static void PasteSelectionRotated(int dstLayer, int dstX, int dstZ, int rotation
                 CollisionBoxSizeXMap[dstLayer][targetZ][targetX],
                 CollisionBoxSizeZMap[dstLayer][targetZ][targetX]);
 
-            // 2026-06-25: CopyCollisionEdgeMap ãŒ -1 ã®æ™‚ã«ãƒ“ãƒƒãƒˆåˆ¤å®šã™ã‚‹ã¨å…¨è¾ºONæ‰±ã„ã«ãªã‚Šã€
-            // ã‚³ãƒ”ãƒ¼é…ç½®å¾Œã®å½“ãŸã‚Šåˆ¤å®šãŒæš´ã‚Œã‚‹ãŸã‚ã€è¾ºãªã—ã¯ -1 ã®ã¾ã¾å¾©å…ƒã™ã‚‹ã€‚
+            // 2026-06-25: CopyCollisionEdgeMap ‚ª -1 ‚Ì‚Éƒrƒbƒg”»’è‚·‚é‚Æ‘S•ÓONˆµ‚¢‚É‚È‚èA
+            // ƒRƒs[”z’uŒã‚Ì“–‚½‚è”»’è‚ª–\‚ê‚é‚½‚ßA•Ó‚È‚µ‚Í -1 ‚Ì‚Ü‚Ü•œŒ³‚·‚éB
             if (CopyCollisionEdgeMap[srcZ][srcX] < 0)
             {
                 CollisionEdgeMap[dstLayer][targetZ][targetX] = -1;
@@ -315,3 +366,5 @@ static void PasteSelectionRotated(int dstLayer, int dstX, int dstZ, int rotation
 }
 
 #pragma endregion
+
+

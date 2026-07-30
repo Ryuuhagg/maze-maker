@@ -1,8 +1,6 @@
 #pragma once
 #include "DxLib.h"
 
-#if 0
-
 // 2026-06-12: 敵をGameEventIdから完全に分離するため、敵専用IDを追加。
 enum GameEnemyId
 {
@@ -27,5 +25,3 @@ bool TrySpawnGameEnemyAtWorld(int enemyId, VECTOR pos);
 VECTOR GetGameEnemyWorldPosition(int layer, int x, int z);
 int GetGameEnemyCount();
 bool GetGameEnemyPosition(int index, VECTOR& pos, int& layer);
-
-#endif

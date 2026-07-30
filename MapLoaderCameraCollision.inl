@@ -1,4 +1,4 @@
-ï»¿VECTOR ResolveCameraCollision(VECTOR target, VECTOR ideal, float radius, int layer)
+VECTOR ResolveCameraCollision(VECTOR target, VECTOR ideal, float radius, int layer)
 {
     const int stepCount = 24;
 
@@ -14,7 +14,7 @@
             target.z + (ideal.z - target.z) * t
         );
 
-        if (!CanMoveWorldPosition(layer, check.x, check.z, radius))
+        if (!CanCameraMoveWorldPosition(layer, check.x, check.z, radius, check.y))
         {
             return lastSafe;
         }
@@ -25,4 +25,4 @@
     return ideal;
 }
 
-#pragma region ===== ãƒãƒƒãƒ—åˆæœŸåŒ– =====
+#pragma region ===== ƒ}ƒbƒv‰Šú‰» =====

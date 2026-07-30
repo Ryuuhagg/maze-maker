@@ -1,9 +1,12 @@
-ï»¿//UIManager.cpp
+//UIManager.cpp
 #include"UIManager.h"
 #include"Input.h"
 #include"Dxlib.h"
 void UIManager::Add(const std::shared_ptr<UI>& ui) {
     uiList.push_back(ui);
+
+    if (focusIndex < 0 || focusIndex >= (int)uiList.size())
+        focusIndex = 0;
 
     if (uiList.size() == 1 || !uiList[focusIndex]->IsSelectable()) {
         for (int i = 0; i < uiList.size(); i++) {
@@ -16,6 +19,12 @@ void UIManager::Add(const std::shared_ptr<UI>& ui) {
 }
 
 void UIManager::Update() {
+    // 2026-07-15: UI‚ª‹ó‚ÌƒV[ƒ“‚Å•ûŒü“ü—Í‚ª—ˆ‚½Avector”ÍˆÍŠOƒAƒNƒZƒX‚Å—‚¿‚È‚¢‚æ‚¤‚É‚·‚éB
+    if (uiList.empty())
+        return;
+    if (focusIndex < 0 || focusIndex >= (int)uiList.size())
+        focusIndex = 0;
+
     bool focusChangedByKeyboard = false;
 
     static int padMoveWait = 0;
@@ -24,7 +33,7 @@ void UIManager::Update() {
         padMoveWait--;
     }
 
-    // ãƒã‚¦ã‚¹ãƒ›ã‚¤ãƒ¼ãƒ«
+    // ƒ}ƒEƒXƒzƒC[ƒ‹
     bool anyUsing = false;
     for (auto& ui : uiList) {
         if (ui->IsUsing()) {
@@ -37,11 +46,11 @@ void UIManager::Update() {
         scrollY += GetMouseWheelRotVol() * -20;
     }
 
-    // ã‚¯ãƒ©ãƒ³ãƒ—ï¼ˆåˆ¶é™ï¼‰
+    // ƒNƒ‰ƒ“ƒvi§ŒÀj
     if (scrollY < 0) scrollY = 0;
-    if (scrollY > 500) scrollY = 500; // â† é©å½“ã«æœ€å¤§å€¤
+    if (scrollY > 500) scrollY = 500; // © “K“–‚ÉÅ‘å’l
 
-    // â†“ã‚­ãƒ¼
+    // «ƒL[
     if (padMoveWait == 0 && Input::IsActionTrigger(Action::Down)) {
         int currentX = uiList[focusIndex]->GetPos().x;
         int currentY = uiList[focusIndex]->GetPos().y;
@@ -78,7 +87,7 @@ void UIManager::Update() {
         }
     }
 
-    // â†‘ã‚­ãƒ¼
+    // ªƒL[
     else if (padMoveWait == 0 && Input::IsActionTrigger(Action::Up)) {
         int currentX = uiList[focusIndex]->GetPos().x;
         int currentY = uiList[focusIndex]->GetPos().y;
@@ -115,7 +124,7 @@ void UIManager::Update() {
         }
     }
 
-    // â†’ã‚­ãƒ¼
+    // ¨ƒL[
     else if (padMoveWait == 0 && Input::IsActionTrigger(Action::Right)) {
         int currentX = uiList[focusIndex]->GetPos().x;
 
@@ -147,7 +156,7 @@ void UIManager::Update() {
         }
     }
 
-    // â†ã‚­ãƒ¼
+    // ©ƒL[
     else if (padMoveWait == 0 && Input::IsActionTrigger(Action::Left)) {
         int currentX = uiList[focusIndex]->GetPos().x;
 
@@ -178,7 +187,7 @@ void UIManager::Update() {
             Play("cursor_move");
         }
     }
-    // ãƒã‚¦ã‚¹
+    // ƒ}ƒEƒX
     if (!anyUsing && Input::IsMouseMoved()) {
         for (int i = 0; i < uiList.size(); i++) {
             if (uiList[i]->IsSelectable() && uiList[i]->IsMouseOverSelf(scrollY)) {
@@ -192,7 +201,7 @@ void UIManager::Update() {
         }
     }
 
-    // ãƒ•ã‚©ãƒ¼ã‚«ã‚¹è¨­å®š
+    // ƒtƒH[ƒJƒXİ’è
     for (int i = 0; i < uiList.size(); i++) {
         uiList[i]->SetFocus(i == focusIndex);
     }
@@ -228,13 +237,13 @@ void UIManager::Update() {
                 targetScroll = 0;
             }
 
-            // è£œé–“ï¼ˆãªã‚ã‚‰ã‹ï¼‰
+            // •âŠÔi‚È‚ß‚ç‚©j
             scrollY = targetScroll;
         }
 
     }
 
-    // æ±ºå®šã‚­ãƒ¼
+    // Œˆ’èƒL[
     if (!anyUsing && Input::IsActionTrigger(Action::Confirm)) {
         if (uiList[focusIndex]->IsSelectable()) {
             uiList[focusIndex]->OnClick();
@@ -271,3 +280,4 @@ void UIManager::Play(const string& name) {
 void UIManager::SetSoundManager(SoundManager* sound) {
     soundManager = sound;
 }
+

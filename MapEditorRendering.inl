@@ -1,128 +1,378 @@
-// 2026-06-02: EVENTタブで置いたゲーム用ギミックをエディター3Dビュー上でも識別できるよう追加。
-static const char* GetEditorEventMarkerName(int eventId)
+#pragma region ===== Editor 3D Rendering =====
+
+static bool ShouldDrawEditorLayer(int layer)
 {
-    if (eventId == 0) return "START";
-    if (eventId == 1) return "GOAL";
-    if (eventId == 2) return "ITEM";
-    if (eventId == 3) return "DANGER";
-    if (eventId == 4) return "KEY";
-    if (eventId == 5) return "DOOR";
-    if (eventId == 6) return "ENEMY";
-    // 2026-06-15: チェックポイントを3Dビュー上で見分けるため追加。
-    if (eventId == 7) return "CHECKPOINT";
-    return "EVENT";
+    return !showCurrentLayerOnly || layer == currentLayer;
 }
 
-// 2026-06-02: EVENTタブで置いた場所を色と形で見分けられるよう、種類ごとの表示色を追加。
-static int GetEditorEventMarkerColor(int eventId)
+static void DrawEditorModelWithEvenLight(int modelHandle)
 {
-    if (eventId == 0) return GetColor(80, 255, 80);
-    if (eventId == 1) return GetColor(255, 80, 80);
-    if (eventId == 2) return GetColor(80, 220, 255);
-    if (eventId == 3) return GetColor(255, 70, 70);
-    if (eventId == 4) return GetColor(255, 220, 50);
-    if (eventId == 5) return GetColor(190, 120, 255);
-    if (eventId == 6) return GetColor(255, 140, 40);
-    if (eventId == 7) return GetColor(80, 255, 170);
-    return GetColor(230, 230, 230);
+    // 2026-07-21: Restore comment. DxLib in this project has no MV1SetMaterialUseLighting, so disable lighting only while drawing editor models.
+    int oldLighting = GetLightEnable();
+    SetUseLighting(FALSE);
+    SetLightEnable(FALSE);
+    MV1DrawModel(modelHandle);
+    SetLightEnable(oldLighting);
+    SetUseLighting(TRUE);
 }
 
-// 2026-06-02: エディター側で「どのセルに何を置いたか」が一目で分かるよう、EVENTマーカーとラベルを描くため追加。
+static void ApplyEditorLockedDoorDrawOffset(VECTOR& pos, int rot)
+{
+    // 2026-07-21: Restore comment. Locked door uses the same cell-edge placement as walls, so editor and play mode line up.
+    const float halfBlock = BLOCK_SIZE * 0.5f;
+    switch (rot & 3)
+    {
+    case 0: pos.z -= halfBlock; break;
+    case 1: pos.x += halfBlock; break;
+    case 2: pos.z += halfBlock; break;
+    case 3: pos.x -= halfBlock; break;
+    }
+}
+
+static bool IsEditorCustomColor(int colorIndex)
+{
+    // 2026-07-21: 0?5の既存プリセットと区別するため、自由色は上位bitを付けて保存する。
+    return (colorIndex & 0x01000000) != 0;
+}
+
+static COLOR_F GetEditorPlacedColorF(int colorIndex)
+{
+    // 2026-07-21: 色変更ボタンで保存した色番号を、DxLibのマテリアル色へ変換する。
+    if (IsEditorCustomColor(colorIndex))
+    {
+        int rgb = colorIndex & 0x00ffffff;
+        return GetColorF(((rgb >> 16) & 255) / 255.0f, ((rgb >> 8) & 255) / 255.0f, (rgb & 255) / 255.0f, 1.0f);
+    }
+
+    switch (colorIndex % 6)
+    {
+    case 1: return GetColorF(1.0f, 0.35f, 0.35f, 1.0f);
+    case 2: return GetColorF(0.35f, 0.55f, 1.0f, 1.0f);
+    case 3: return GetColorF(0.35f, 1.0f, 0.50f, 1.0f);
+    case 4: return GetColorF(1.0f, 0.86f, 0.30f, 1.0f);
+    case 5: return GetColorF(0.72f, 0.42f, 1.0f, 1.0f);
+    default: return GetColorF(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+}
+
+static int GetEditorPlacedDrawColor(int colorIndex)
+{
+    // 2026-07-21: モデルが無い簡易床表示にも、色変更ボタンの色を反映する。
+    if (IsEditorCustomColor(colorIndex))
+    {
+        int rgb = colorIndex & 0x00ffffff;
+        return GetColor((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
+    }
+
+    switch (colorIndex % 6)
+    {
+    case 1: return GetColor(255, 90, 90);
+    case 2: return GetColor(90, 140, 255);
+    case 3: return GetColor(90, 220, 120);
+    case 4: return GetColor(255, 220, 70);
+    case 5: return GetColor(190, 110, 255);
+    default: return GetColor(82, 72, 58);
+    }
+}
+
+static bool IsEditorLowPlatformDecoId(int id)
+{
+    // 2026-07-22: ローダー側のIsLowPlatformDecoIdと同じく、床レイヤー6を半ブロック足場として描く。
+    return id == 6;
+}
+
+static void GetEditorClimbHintDirOffset(int dir, int& dx, int& dz)
+{
+    // 2026-07-22: ローダー側のはしご表示と同じ方向対応で、L接続の向きをエディターでも判断する。
+    dx = 0;
+    dz = 0;
+    switch (dir & 3)
+    {
+    case 0: dz = -1; break;
+    case 1: dx = 1; break;
+    case 2: dz = 1; break;
+    case 3: dx = -1; break;
+    }
+}
+
+static bool HasEditorWallEdgeForClimb(int layer, int z, int x, int dir)
+{
+    // 2026-07-22: はしごは壁で塞がれた方向には出さないよう、配置済み壁A/Bの辺と衝突編集の辺を確認する。
+    int bit = GetCollisionEdgeBit(dir);
+    if ((CollisionEdgeMap[layer][z][x] & bit) != 0)
+        return true;
+    if (WallMapA[layer][z][x] >= 0 && WallRotA[layer][z][x] == (dir & 3))
+        return true;
+    if (WallMapB[layer][z][x] >= 0 && WallRotB[layer][z][x] == (dir & 3))
+        return true;
+    return false;
+}
+
+static bool IsEditorClimbHintDirection(int y, int z, int x, int dir)
+{
+    // 2026-07-22: 段差6はLキーの手動ON/OFFを使わず、隣の上層床へ届く方向を自動接続としてエディターにはしご表示する。
+    if (!IsMapPosValid(y, z, x) || !IsEditorLowPlatformDecoId(DecoMap[y][z][x]))
+        return false;
+
+    int dx = 0;
+    int dz = 0;
+    GetEditorClimbHintDirOffset(dir, dx, dz);
+
+    int upperLayer = y + 1;
+    int targetX = x + dx;
+    int targetZ = z + dz;
+    if (!IsMapPosValid(upperLayer, targetZ, targetX))
+        return false;
+    if (FloorMap[upperLayer][targetZ][targetX] < 0)
+        return false;
+    if (HasEditorWallEdgeForClimb(y, z, x, dir))
+        return false;
+
+    return true;
+}
+
+static void DrawEditorClimbHintEdge(int x, int y, int z, int dir, float opacity)
+{
+    // 2026-07-22: ローダー側で表示しているはしごID30を、エディターでも段差6の上層接続位置に表示する。
+    const int ladderModelId = 30;
+    if (ladderModelId < 0 || ladderModelId >= MODEL_MAX || modelHandles[ladderModelId] == -1)
+        return;
+
+    int dx = 0;
+    int dz = 0;
+    GetEditorClimbHintDirOffset(dir, dx, dz);
+
+    VECTOR pos = VGet(
+        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + dx * BLOCK_SIZE * 0.42f,
+        y * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + dz * BLOCK_SIZE * 0.42f
+    );
+    pos = ApplyEditorModelConfigOffset(DECO, ladderModelId, pos);
+
+    MV1SetPosition(modelHandles[ladderModelId], pos);
+    MV1SetRotationXYZ(modelHandles[ladderModelId], VGet(0.0f, RotToRad(dir), 0.0f));
+    MV1SetOpacityRate(modelHandles[ladderModelId], opacity);
+    DrawEditorModelWithEvenLight(modelHandles[ladderModelId]);
+    MV1SetOpacityRate(modelHandles[ladderModelId], 1.0f);
+}
+
+static void DrawEditorClimbHints(int x, int y, int z, float opacity)
+{
+    // 2026-07-22: 段差6から上層床につながる方向すべてに、ローダーと同じはしごを自動表示する。
+    for (int dir = 0; dir < 4; dir++)
+    {
+        if (IsEditorClimbHintDirection(y, z, x, dir))
+            DrawEditorClimbHintEdge(x, y, z, dir, opacity);
+    }
+}
+static void DrawEditorModelWithPlacedColor(int modelHandle, int colorIndex)
+{
+    // 2026-07-21: 同じモデルを使い回しつつ、配置セルごとの色変更を描画時だけ反映する。
+    // 2026-07-21: MaterialDifColorはテクスチャ付きモデルだと効きにくいため、モデル全体の色倍率で tint する。
+    MV1SetDifColorScale(modelHandle, GetEditorPlacedColorF(colorIndex));
+    MV1SetAmbColorScale(modelHandle, GetEditorPlacedColorF(colorIndex));
+    DrawEditorModelWithEvenLight(modelHandle);
+    MV1SetDifColorScale(modelHandle, GetColorF(1.0f, 1.0f, 1.0f, 1.0f));
+    MV1SetAmbColorScale(modelHandle, GetColorF(1.0f, 1.0f, 1.0f, 1.0f));
+}
+static void DrawEditorFloorBlockBase(int x, int y, int z, float yOffset, float height, int fillColor, int edgeColor)
+{
+    float left = x * BLOCK_SIZE;
+    float right = (x + 1) * BLOCK_SIZE;
+    float front = z * BLOCK_SIZE;
+    float back = (z + 1) * BLOCK_SIZE;
+    float bottom = y * BLOCK_SIZE + yOffset;
+    float top = bottom + height;
+
+    DrawCube3D(
+        VGet(left, bottom, front),
+        VGet(right, top, back),
+        fillColor,
+        edgeColor,
+        TRUE
+    );
+}
+
 static void DrawEditorEventMarker(int layer, int z, int x, int eventId)
 {
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float baseY = layer * BLOCK_SIZE + 30.0f;
-    float topY = layer * BLOCK_SIZE + 260.0f;
-    int color = GetEditorEventMarkerColor(eventId);
-
-    DrawLine3D(VGet(cx, baseY, cz), VGet(cx, topY, cz), color);
-    DrawSphere3D(VGet(cx, topY, cz), eventId == 5 ? 70.0f : 52.0f, 16, color, GetColor(255, 255, 255), TRUE);
-
-    if (eventId == 3)
-    {
-        DrawLine3D(VGet(cx - 90.0f, topY, cz - 90.0f), VGet(cx + 90.0f, topY, cz + 90.0f), color);
-        DrawLine3D(VGet(cx + 90.0f, topY, cz - 90.0f), VGet(cx - 90.0f, topY, cz + 90.0f), color);
-    }
-    else if (eventId == 4)
-    {
-        DrawLine3D(VGet(cx - 90.0f, topY, cz), VGet(cx + 90.0f, topY, cz), color);
-        DrawLine3D(VGet(cx + 40.0f, topY, cz), VGet(cx + 40.0f, topY, cz + 55.0f), color);
-    }
-    else if (eventId == 5)
-    {
-        DrawCube3D(
-            VGet(cx - 95.0f, layer * BLOCK_SIZE + 20.0f, cz - 35.0f),
-            VGet(cx + 95.0f, layer * BLOCK_SIZE + 220.0f, cz + 35.0f),
-            color,
-            GetColor(60, 30, 100),
-            FALSE
-        );
-    }
-    else if (eventId == 6)
-    {
-        DrawLine3D(VGet(cx - 90.0f, topY, cz), VGet(cx + 90.0f, topY, cz), color);
-        DrawLine3D(VGet(cx + 90.0f, topY, cz), VGet(cx + 45.0f, topY, cz - 45.0f), color);
-        DrawLine3D(VGet(cx + 90.0f, topY, cz), VGet(cx + 45.0f, topY, cz + 45.0f), color);
-    }
-    else if (eventId == 7)
-    {
-        DrawLine3D(VGet(cx, baseY, cz), VGet(cx, topY + 70.0f, cz), color);
-        DrawLine3D(VGet(cx, topY, cz), VGet(cx + 110.0f, topY - 65.0f, cz), color);
-        DrawLine3D(VGet(cx + 110.0f, topY - 65.0f, cz), VGet(cx, topY - 130.0f, cz), color);
-    }
-
-    VECTOR screen = ConvWorldPosToScreenPos(VGet(cx, topY + 70.0f, cz));
-    if (screen.z >= 0.0f && screen.z <= 1.0f)
-    {
-        DrawFormatString((int)screen.x - 28, (int)screen.y - 8, color, "%s", GetEditorEventMarkerName(eventId));
-    }
+    // 2026-07-21: EVENTは登録モデルだけを見せるため、仮表示の色付き丸マーカーは描画しない。
 }
 
-static const char* GetEditorEnemyMarkerName(int enemyId)
+static int GetEditorModelIdFromEnemyId(int enemyId)
 {
-    // 2026-06-12: EnemyMapのID 0をSTARTではなく敵名として表示するため追加。
-    if (enemyId == 0) return "ENEMY";
-    return "ENEMY";
+    // 2026-07-21: ENEMYはCSV上のモデルIDと配置IDを分けているため、配置済み表示では配置IDからモデルIDへ戻す。
+    for (int i = 0; i < tabModelCount[ENEMY]; i++)
+    {
+        int modelId = tabModelList[ENEMY][i];
+        if (modelId >= 0 && modelId < MODEL_MAX && GetEditorEnemyIdFromModel(modelId) == enemyId)
+            return modelId;
+    }
+    return -1;
 }
 
 static void DrawEditorEnemyMarker(int layer, int z, int x, int enemyId)
 {
-    // 2026-06-12: ENEMY配置をEVENTマーカーとは別の見た目で確認できるよう追加。
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float baseY = layer * BLOCK_SIZE + 30.0f;
-    float topY = layer * BLOCK_SIZE + 260.0f;
-    int color = GetColor(255, 140, 40);
+    int modelId = GetEditorModelIdFromEnemyId(enemyId);
+    if (modelId < 0 || modelId >= MODEL_MAX || modelHandles[modelId] == -1)
+        return;
 
-    DrawLine3D(VGet(cx, baseY, cz), VGet(cx, topY, cz), color);
-    DrawSphere3D(VGet(cx, topY, cz), 62.0f, 16, color, GetColor(255, 255, 255), TRUE);
-    DrawLine3D(VGet(cx - 90.0f, topY, cz), VGet(cx + 90.0f, topY, cz), color);
-    DrawLine3D(VGet(cx + 90.0f, topY, cz), VGet(cx + 45.0f, topY, cz - 45.0f), color);
-    DrawLine3D(VGet(cx + 90.0f, topY, cz), VGet(cx + 45.0f, topY, cz + 45.0f), color);
-
-    VECTOR screen = ConvWorldPosToScreenPos(VGet(cx, topY + 70.0f, cz));
-    if (screen.z >= 0.0f && screen.z <= 1.0f)
-    {
-        DrawFormatString((int)screen.x - 28, (int)screen.y - 8, color, "%s", GetEditorEnemyMarkerName(enemyId));
-    }
+    // 2026-07-21: ENEMY配置時にも完成位置が分かるよう、仮の丸ではなく登録モデルそのものを表示する。
+    VECTOR pos = GetModelDrawPosition(ENEMY, x, layer, z, 0);
+    pos = ApplyEditorModelConfigOffset(ENEMY, modelId, pos);
+    pos.y += 8.0f;
+    MV1SetPosition(modelHandles[modelId], pos);
+    MV1SetRotationXYZ(modelHandles[modelId], VGet(0.0f, RotToRad(0), 0.0f));
+    DrawEditorModelWithEvenLight(modelHandles[modelId]);
 }
 
-// 2026-06-24: コピー範囲を確定前に半透明表示するため追加。
-// 実データへ一度書き込んで戻す方式を避け、プレビュー中のUndo汚染を防ぐ。
+static void DrawEditorPatrolPointMarker(int layer, int z, int x, int color)
+{
+    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float y = layer * BLOCK_SIZE + 72.0f;
+    float half = BLOCK_SIZE * 0.11f;
+    // 2026-07-22: 巡回ポイントは実体モデルではないため、小さい箱マーカーで配置位置だけ見せる。
+    DrawCube3D(
+        VGet(cx - half, y, cz - half),
+        VGet(cx + half, y + 34.0f, cz + half),
+        color,
+        GetColor(30, 80, 110),
+        TRUE
+    );
+}
+
+static void DrawEditorAllEnemyPatrolMarkers()
+{
+    for (int layer = 0; layer < BLOCK_NUM_Y; layer++)
+    {
+        if (!ShouldDrawEditorLayer(layer))
+            continue;
+
+        for (int z = 0; z < BLOCK_NUM_Z; z++)
+        {
+            for (int x = 0; x < BLOCK_NUM_X; x++)
+            {
+                if (EnemyMap[layer][z][x] < 0)
+                    continue;
+
+                int count = EnemyPatrolCountMap[layer][z][x];
+                if (count <= 0)
+                    continue;
+
+                bool selected = layer == selectedPatrolEnemyLayer && z == selectedPatrolEnemyZ && x == selectedPatrolEnemyX;
+                int lineColor = selected ? GetColor(80, 220, 255) : GetColor(70, 150, 190);
+                int pointColor = selected ? GetColor(80, 220, 255) : GetColor(80, 170, 210);
+                float lineY = layer * BLOCK_SIZE + 112.0f;
+                float lastX = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                float lastZ = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+
+                for (int i = 0; i < count; i++)
+                {
+                    int px = EnemyPatrolXMap[layer][z][x][i];
+                    int pz = EnemyPatrolZMap[layer][z][x][i];
+                    if (!IsMapPosValid(layer, pz, px))
+                        continue;
+
+                    float toX = px * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                    float toZ = pz * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                    DrawLine3D(VGet(lastX, lineY, lastZ), VGet(toX, lineY, toZ), lineColor);
+                    DrawEditorPatrolPointMarker(layer, pz, px, pointColor);
+                    lastX = toX;
+                    lastZ = toZ;
+                }
+            }
+        }
+    }
+}
+static void DrawEditorEnemyPatrolPlacementPreview()
+{
+    if (!enemyPatrolEditMode || currentTab != ENEMY)
+        return;
+    if (!IsMapPosValid(selectedPatrolEnemyLayer, selectedPatrolEnemyZ, selectedPatrolEnemyX))
+        return;
+    if (EnemyMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX] < 0)
+        return;
+    if (!ShouldDrawEditorLayer(selectedPatrolEnemyLayer))
+        return;
+
+    int lineColor = GetColor(80, 220, 255);
+    int pointColor = GetColor(80, 220, 255);
+    int previewColor = GetColor(255, 240, 90);
+    float y = selectedPatrolEnemyLayer * BLOCK_SIZE + 70.0f;
+    float fromX = selectedPatrolEnemyX * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float fromZ = selectedPatrolEnemyZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float lastX = fromX;
+    float lastZ = fromZ;
+
+    // 2026-07-22: 巡回線は敵から全点へ放射状に出さず、置いた順番の最後の点から次へ伸びるようにする。
+    int count = EnemyPatrolCountMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX];
+    for (int i = 0; i < count; i++)
+    {
+        int px = EnemyPatrolXMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][i];
+        int pz = EnemyPatrolZMap[selectedPatrolEnemyLayer][selectedPatrolEnemyZ][selectedPatrolEnemyX][i];
+        if (!IsMapPosValid(selectedPatrolEnemyLayer, pz, px))
+            continue;
+
+        float toX = px * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        float toZ = pz * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        DrawLine3D(VGet(lastX, y, lastZ), VGet(toX, y, toZ), lineColor);
+        DrawEditorPatrolPointMarker(selectedPatrolEnemyLayer, pz, px, pointColor);
+        lastX = toX;
+        lastZ = toZ;
+    }
+
+    if (IsHoverValid() && hoverX >= 0 && hoverZ >= 0 && currentLayer == selectedPatrolEnemyLayer)
+    {
+        float toX = hoverX * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        float toZ = hoverZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        DrawLine3D(VGet(lastX, y + 12.0f, lastZ), VGet(toX, y + 12.0f, toZ), previewColor);
+        DrawEditorPatrolPointMarker(currentLayer, hoverZ, hoverX, previewColor);
+    }
+}
+static void DrawEditorEventConfiguredModel(int layer, int z, int x, int eventId, int rot, float opacity)
+{
+    int modelId = GetEditorModelIdFromEventId(eventId);
+    if (modelId < 0 || modelId >= MODEL_MAX || modelHandles[modelId] == -1)
+        return;
+
+    VECTOR pos = GetModelDrawPosition(EVENT, x, layer, z, 0);
+    pos.y += 8.0f;
+    if (eventId == 5)
+    {
+        // 2026-07-21: Restore comment. Match game-side locked door offset so editor placement preview lines up with play mode.
+        ApplyEditorLockedDoorDrawOffset(pos, rot);
+    }
+
+    // 2026-07-21: Restore comment. EVENT models use saved EventRot so doors keep the direction chosen with R.
+    int drawRot = GetEditorModelDrawRot(EVENT, modelId, rot);
+    MV1SetPosition(modelHandles[modelId], pos);
+    MV1SetRotationXYZ(modelHandles[modelId], VGet(0.0f, RotToRad(drawRot), 0.0f));
+    MV1SetOpacityRate(modelHandles[modelId], opacity);
+    DrawEditorModelWithEvenLight(modelHandles[modelId]);
+    MV1SetOpacityRate(modelHandles[modelId], 1.0f);
+}
+
 static void DrawCopyPreviewModel(int tab, int id, int x, int y, int z, int rot)
 {
     if (id < 0 || id >= MODEL_MAX || modelHandles[id] == -1)
         return;
 
+
     VECTOR pos = GetModelDrawPosition(tab, x, y, z, rot);
+    pos = ApplyEditorModelConfigOffset(tab, id, pos);
+    pos = ApplyEditorWallModelAlignmentOffset(tab, id, rot, pos);
     pos.y += 12.0f;
 
     int drawRot = GetEditorModelDrawRot(tab, id, rot);
     MV1SetPosition(modelHandles[id], pos);
     MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(drawRot), 0.0f));
     MV1SetOpacityRate(modelHandles[id], 0.45f);
-    MV1DrawModel(modelHandles[id]);
+    DrawEditorModelWithEvenLight(modelHandles[id]);
+    if (tab == DECO && IsEditorLowPlatformDecoId(id))
+    {
+        // 2026-07-22: コピー配置プレビューではモデル描画後に地面から半ブロック分の箱を重ね、段差6の足場面を見せる。
+        DrawEditorFloorBlockBase(x, y, z, 0.0f, BLOCK_SIZE * 0.5f, GetEditorPlacedDrawColor(editorColorIndex), GetColor(42, 35, 27));
+    }
     MV1SetOpacityRate(modelHandles[id], 1.0f);
 }
 
@@ -132,453 +382,343 @@ static void DrawCopyPreview()
         return;
 
     int rotation = copyRotation & 3;
+    int previewSizeX = (rotation & 1) ? copySizeZ : copySizeX;
+    int previewSizeZ = (rotation & 1) ? copySizeX : copySizeZ;
 
     for (int srcZ = 0; srcZ < copySizeZ; srcZ++)
     {
         for (int srcX = 0; srcX < copySizeX; srcX++)
         {
-            int rotatedX = 0;
-            int rotatedZ = 0;
-            GetRotatedCopyPosition(srcX, srcZ, rotation, rotatedX, rotatedZ);
+            int rotatedX = srcX;
+            int rotatedZ = srcZ;
+            switch (rotation)
+            {
+            case 1:
+                rotatedX = copySizeZ - 1 - srcZ;
+                rotatedZ = srcX;
+                break;
+            case 2:
+                rotatedX = copySizeX - 1 - srcX;
+                rotatedZ = copySizeZ - 1 - srcZ;
+                break;
+            case 3:
+                rotatedX = srcZ;
+                rotatedZ = copySizeX - 1 - srcX;
+                break;
+            }
 
             int previewX = hoverX + rotatedX;
             int previewZ = hoverZ + rotatedZ;
+            if (!IsMapPosValid(currentLayer, previewZ, previewX))
+                continue;
 
-            DrawCopyPreviewModel(
-                FLOOR, CopyFloorMap[srcZ][srcX], previewX, currentLayer, previewZ,
-                (CopyFloorRot[srcZ][srcX] + rotation) & 3);
-            DrawCopyPreviewModel(
-                WALL, CopyWallMapA[srcZ][srcX], previewX, currentLayer, previewZ,
-                (CopyWallRotA[srcZ][srcX] + rotation) & 3);
-            DrawCopyPreviewModel(
-                WALL, CopyWallMapB[srcZ][srcX], previewX, currentLayer, previewZ,
-                (CopyWallRotB[srcZ][srcX] + rotation) & 3);
-            DrawCopyPreviewModel(
-                CORNER, CopyCornerMap[srcZ][srcX], previewX, currentLayer, previewZ,
-                (CopyCornerRot[srcZ][srcX] + rotation) & 3);
-            DrawCopyPreviewModel(
-                DECO, CopyDecoMap[srcZ][srcX], previewX, currentLayer, previewZ,
-                (CopyDecoRot[srcZ][srcX] + rotation) & 3);
+            DrawCopyPreviewModel(FLOOR, CopyFloorMap[srcZ][srcX], previewX, currentLayer, previewZ, (CopyFloorRot[srcZ][srcX] + rotation) & 3);
+            DrawCopyPreviewModel(WALL, CopyWallMapA[srcZ][srcX], previewX, currentLayer, previewZ, (CopyWallRotA[srcZ][srcX] + rotation) & 3);
+            DrawCopyPreviewModel(WALL, CopyWallMapB[srcZ][srcX], previewX, currentLayer, previewZ, (CopyWallRotB[srcZ][srcX] + rotation) & 3);
+            DrawCopyPreviewModel(CORNER, CopyCornerMap[srcZ][srcX], previewX, currentLayer, previewZ, (CopyCornerRot[srcZ][srcX] + rotation) & 3);
+            DrawCopyPreviewModel(DECO, CopyDecoMap[srcZ][srcX], previewX, currentLayer, previewZ, (CopyDecoRot[srcZ][srcX] + rotation) & 3);
 
             if (CopyEventMap[srcZ][srcX] >= 0)
+            {
+                // 2026-07-21: Restore comment. Copy preview rotates EVENT doors together with the copied room.
+                DrawEditorEventConfiguredModel(currentLayer, previewZ, previewX, CopyEventMap[srcZ][srcX], (CopyEventRot[srcZ][srcX] + rotation) & 3, 0.45f);
                 DrawEditorEventMarker(currentLayer, previewZ, previewX, CopyEventMap[srcZ][srcX]);
+            }
         }
     }
-
-    int previewSizeX = 0;
-    int previewSizeZ = 0;
-    GetRotatedCopySize(rotation, previewSizeX, previewSizeZ);
 
     float left = hoverX * BLOCK_SIZE;
     float top = hoverZ * BLOCK_SIZE;
     float right = (hoverX + previewSizeX) * BLOCK_SIZE;
     float bottom = (hoverZ + previewSizeZ) * BLOCK_SIZE;
     float y = currentLayer * BLOCK_SIZE + 24.0f;
-    bool fitsMap =
-        hoverX >= 0 && hoverZ >= 0 &&
-        hoverX + previewSizeX <= BLOCK_NUM_X &&
-        hoverZ + previewSizeZ <= BLOCK_NUM_Z;
-    int color = fitsMap ? GetColor(80, 255, 255) : GetColor(255, 80, 80);
-
-    SetUseZBuffer3D(FALSE);
-    SetWriteZBuffer3D(FALSE);
+    int color = GetColor(255, 255, 0);
     DrawLine3D(VGet(left, y, top), VGet(right, y, top), color);
     DrawLine3D(VGet(right, y, top), VGet(right, y, bottom), color);
     DrawLine3D(VGet(right, y, bottom), VGet(left, y, bottom), color);
     DrawLine3D(VGet(left, y, bottom), VGet(left, y, top), color);
-    SetUseZBuffer3D(TRUE);
-    SetWriteZBuffer3D(TRUE);
+}
 
-    // 2026-06-25: コピー配置中の案内は左素材欄と被るため、MapUI.cppの下部UIへ移動。
+static void DrawEditorGrid()
+{
+    if (!showGrid)
+        return;
+
+    int color = GetColor(70, 70, 70);
+    float gridY = currentLayer * BLOCK_SIZE;
+    for (int z = 0; z <= BLOCK_NUM_Z; z++)
+        DrawLine3D(VGet(0.0f, gridY, z * BLOCK_SIZE), VGet(BLOCK_NUM_X * BLOCK_SIZE, gridY, z * BLOCK_SIZE), color);
+    for (int x = 0; x <= BLOCK_NUM_X; x++)
+        DrawLine3D(VGet(x * BLOCK_SIZE, gridY, 0.0f), VGet(x * BLOCK_SIZE, gridY, BLOCK_NUM_Z * BLOCK_SIZE), color);
+}
+
+static void DrawEditorSelectionRect()
+{
+    if (!HasValidSelection())
+        return;
+
+    int minX = min(selectStartX, selectEndX);
+    int maxX = max(selectStartX, selectEndX);
+    int minZ = min(selectStartZ, selectEndZ);
+    int maxZ = max(selectStartZ, selectEndZ);
+    float x1 = minX * BLOCK_SIZE;
+    float x2 = (maxX + 1) * BLOCK_SIZE;
+    float z1 = minZ * BLOCK_SIZE;
+    float z2 = (maxZ + 1) * BLOCK_SIZE;
+    float y = selectLayer * BLOCK_SIZE + 15.0f;
+    int color = GetColor(0, 255, 255);
+    DrawLine3D(VGet(x1, y, z1), VGet(x2, y, z1), color);
+    DrawLine3D(VGet(x2, y, z1), VGet(x2, y, z2), color);
+    DrawLine3D(VGet(x2, y, z2), VGet(x1, y, z2), color);
+    DrawLine3D(VGet(x1, y, z2), VGet(x1, y, z1), color);
+}
+
+static void DrawEditorCellSelectionOutline(int layer, int z, int x, int color)
+{
+    float x1 = x * BLOCK_SIZE;
+    float x2 = (x + 1) * BLOCK_SIZE;
+    float z1 = z * BLOCK_SIZE;
+    float z2 = (z + 1) * BLOCK_SIZE;
+    float y = layer * BLOCK_SIZE + 18.0f;
+
+    DrawLine3D(VGet(x1, y, z1), VGet(x2, y, z1), color);
+    DrawLine3D(VGet(x2, y, z1), VGet(x2, y, z2), color);
+    DrawLine3D(VGet(x2, y, z2), VGet(x1, y, z2), color);
+    DrawLine3D(VGet(x1, y, z2), VGet(x1, y, z1), color);
+}
+
+static void DrawEditorMultiSelectionRects()
+{
+    if (multiSelectCount <= 0)
+        return;
+
+    int color = GetColor(0, 255, 255);
+    int accentColor = GetColor(255, 255, 0);
+    for (int layer = 0; layer < BLOCK_NUM_Y; layer++)
+    {
+        if (!ShouldDrawEditorLayer(layer))
+            continue;
+
+        for (int z = 0; z < BLOCK_NUM_Z; z++)
+        {
+            for (int x = 0; x < BLOCK_NUM_X; x++)
+            {
+                if (!multiSelectMap[layer][z][x])
+                    continue;
+
+                DrawEditorCellSelectionOutline(layer, z, x, color);
+                float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                float y = layer * BLOCK_SIZE + 20.0f;
+                DrawLine3D(VGet(cx - 10.0f, y, cz), VGet(cx + 10.0f, y, cz), accentColor);
+                DrawLine3D(VGet(cx, y, cz - 10.0f), VGet(cx, y, cz + 10.0f), accentColor);
+            }
+        }
+    }
+}
+
+static void DrawEditorPlacedModels()
+{
+    for (int y = 0; y < BLOCK_NUM_Y; y++)
+    {
+        if (!ShouldDrawEditorLayer(y))
+            continue;
+
+        float opacity = (y == currentLayer) ? 1.0f : 0.22f;
+        // 2026-07-23: 半透明の別階層がZを書き込むと、現在階層へ置く配置プレビューを隠してしまうため別階層だけZ書き込みを止める。
+        SetWriteZBuffer3D(y == currentLayer ? TRUE : FALSE);
+        for (int z = 0; z < BLOCK_NUM_Z; z++)
+        {
+            for (int x = 0; x < BLOCK_NUM_X; x++)
+            {
+                int id = FloorMap[y][z][x];
+                if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
+                {
+                    VECTOR pos = ApplyEditorModelConfigOffset(FLOOR, id, GetModelDrawPosition(FLOOR, x, y, z, FloorRot[y][z][x]));
+                    MV1SetPosition(modelHandles[id], pos);
+                    MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(FloorRot[y][z][x]), 0.0f));
+                    MV1SetOpacityRate(modelHandles[id], opacity);
+                    DrawEditorModelWithPlacedColor(modelHandles[id], FloorColorMap[y][z][x]);
+                    MV1SetOpacityRate(modelHandles[id], 1.0f);
+                }
+                else if (FloorMap[y][z][x] >= 0)
+                {
+                    DrawEditorFloorBlockBase(x, y, z, 0.0f, BLOCK_SIZE * 0.08f, GetEditorPlacedDrawColor(FloorColorMap[y][z][x]), GetColor(38, 32, 26));
+                }
+
+                id = WallMapA[y][z][x];
+                if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
+                {
+                    VECTOR pos = ApplyEditorModelConfigOffset(WALL, id, GetModelDrawPosition(WALL, x, y, z, WallRotA[y][z][x]));
+                    pos = ApplyEditorWallModelAlignmentOffset(WALL, id, WallRotA[y][z][x], pos);
+                    MV1SetPosition(modelHandles[id], pos);
+                    MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(GetEditorModelDrawRot(WALL, id, WallRotA[y][z][x])), 0.0f));
+                    MV1SetOpacityRate(modelHandles[id], opacity);
+                    DrawEditorModelWithPlacedColor(modelHandles[id], WallColorMapA[y][z][x]);
+                    MV1SetOpacityRate(modelHandles[id], 1.0f);
+                }
+
+                id = WallMapB[y][z][x];
+                if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
+                {
+                    VECTOR pos = ApplyEditorModelConfigOffset(WALL, id, GetModelDrawPosition(WALL, x, y, z, WallRotB[y][z][x]));
+                    pos = ApplyEditorWallModelAlignmentOffset(WALL, id, WallRotB[y][z][x], pos);
+                    MV1SetPosition(modelHandles[id], pos);
+                    MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(GetEditorModelDrawRot(WALL, id, WallRotB[y][z][x])), 0.0f));
+                    MV1SetOpacityRate(modelHandles[id], opacity);
+                    DrawEditorModelWithPlacedColor(modelHandles[id], WallColorMapB[y][z][x]);
+                    MV1SetOpacityRate(modelHandles[id], 1.0f);
+                }
+
+                id = CornerMap[y][z][x];
+                if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
+                {
+                    VECTOR pos = ApplyEditorModelConfigOffset(CORNER, id, GetModelDrawPosition(CORNER, x, y, z, CornerRot[y][z][x]));
+                    MV1SetPosition(modelHandles[id], pos);
+                    // 2026-07-21: モデル28はいったん外したため、角モデル29の補正回転だけを配置済み表示にも反映してズレを防ぐ。
+                    MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(GetEditorModelDrawRot(CORNER, id, CornerRot[y][z][x])), 0.0f));
+                    MV1SetOpacityRate(modelHandles[id], opacity);
+                    DrawEditorModelWithPlacedColor(modelHandles[id], CornerColorMap[y][z][x]);
+                    MV1SetOpacityRate(modelHandles[id], 1.0f);
+                }
+
+                id = DecoMap[y][z][x];
+                if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
+                {
+                    int drawRot = (IsEditorStairsId(id) ? GetEditorStairsDrawRot(DecoRot[y][z][x]) : DecoRot[y][z][x]);
+                    VECTOR pos = ApplyEditorModelConfigOffset(DECO, id, GetModelDrawPosition(DECO, x, y, z, DecoRot[y][z][x]));
+                    MV1SetPosition(modelHandles[id], pos);
+                    MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(drawRot), 0.0f));
+                    MV1SetOpacityRate(modelHandles[id], opacity);
+                    DrawEditorModelWithPlacedColor(modelHandles[id], DecoColorMap[y][z][x]);
+                    if (IsEditorLowPlatformDecoId(id))
+                    {
+                        // 2026-07-22: 配置済みの段差6はモデル描画後に地面から半ブロック分の箱を重ね、画像の見た目を前面に出す。
+                        DrawEditorFloorBlockBase(x, y, z, 0.0f, BLOCK_SIZE * 0.5f, GetEditorPlacedDrawColor(DecoColorMap[y][z][x]), GetColor(42, 35, 27));
+                        DrawEditorClimbHints(x, y, z, opacity);
+                    }
+                    MV1SetOpacityRate(modelHandles[id], 1.0f);
+                }
+
+                if (EventMap[y][z][x] >= 0)
+                    DrawEditorEventConfiguredModel(y, z, x, EventMap[y][z][x], EventRot[y][z][x], opacity);
+
+                if (EnemyMap[y][z][x] >= 0)
+                    DrawEditorEnemyMarker(y, z, x, EnemyMap[y][z][x]);
+            }
+        }
+    }
+    SetWriteZBuffer3D(TRUE);
+}
+
+static void DrawEditorMarkers()
+{
+    for (int y = 0; y < BLOCK_NUM_Y; y++)
+    {
+        if (!ShouldDrawEditorLayer(y))
+            continue;
+        for (int z = 0; z < BLOCK_NUM_Z; z++)
+            for (int x = 0; x < BLOCK_NUM_X; x++)
+                if (EventMap[y][z][x] >= 0)
+                    DrawEditorEventMarker(y, z, x, EventMap[y][z][x]);
+    }
+
+    DrawEditorAllEnemyPatrolMarkers();
+}
+
+static void DrawEditorHoverPreview()
+{
+    if (!IsHoverValid() || pasteMode)
+        return;
+
+    int previewId = GetSelectedModel();
+    if (previewId < 0 || previewId >= MODEL_MAX || modelHandles[previewId] == -1)
+        return;
+
+    if (currentTab == ENEMY && FloorMap[currentLayer][hoverZ][hoverX] < 0)
+        return;
+
+    int previewRot = GetEditorPlacementRot(currentTab, hoverZ, hoverX);
+    VECTOR pos = GetModelDrawPosition(currentTab, hoverX, currentLayer, hoverZ, previewRot);
+    pos = ApplyEditorModelConfigOffset(currentTab, previewId, pos);
+    pos = ApplyEditorWallModelAlignmentOffset(currentTab, previewId, previewRot, pos);
+    pos.y += 8.0f;
+    if (currentTab == EVENT && GetEditorEventIdFromModel(previewId) == 5)
+        ApplyEditorLockedDoorDrawOffset(pos, previewRot);
+
+    int previewDrawRot = GetEditorModelDrawRot(currentTab, previewId, previewRot);
+    MV1SetPosition(modelHandles[previewId], pos);
+    MV1SetRotationXYZ(modelHandles[previewId], VGet(0.0f, RotToRad(previewDrawRot), 0.0f));
+    MV1SetOpacityRate(modelHandles[previewId], 0.45f);
+    DrawEditorModelWithPlacedColor(modelHandles[previewId], editorColorIndex);
+    if (currentTab == DECO && IsEditorLowPlatformDecoId(previewId))
+    {
+        // 2026-07-22: 段差6の配置前プレビューはモデル描画後に地面から半ブロック分の箱を重ねて見せる。
+        DrawEditorFloorBlockBase(hoverX, currentLayer, hoverZ, 0.0f, BLOCK_SIZE * 0.5f, GetEditorPlacedDrawColor(editorColorIndex), GetColor(42, 35, 27));
+    }
+    MV1SetOpacityRate(modelHandles[previewId], 1.0f);
+
+    if (showCollisionDebug)
+        DrawDefaultObjectCollision(currentTab, previewId, hoverX, currentLayer, hoverZ, previewRot, GetColor(255, 255, 0));
+}
+
+static void DrawEditorCollisionDebug()
+{
+    if (!showCollisionDebug && !collisionEditMode)
+        return;
+
+    int color = GetColor(255, 255, 0);
+    for (int y = 0; y < BLOCK_NUM_Y; y++)
+    {
+        if (!ShouldDrawEditorLayer(y))
+            continue;
+        for (int z = 0; z < BLOCK_NUM_Z; z++)
+        {
+            for (int x = 0; x < BLOCK_NUM_X; x++)
+            {
+                if (CollisionMap[y][z][x] >= 0)
+                    DrawCollisionBox(x, y, z, (float)CollisionBoxSizeXMap[y][z][x], (float)CollisionBoxSizeZMap[y][z][x], color);
+                if (CollisionEdgeMap[y][z][x] >= 0)
+                    for (int edge = 0; edge < 4; edge++)
+                        if (CollisionEdgeMap[y][z][x] & (1 << edge))
+                            DrawCollisionEdgeLine(x, y, z, edge, CollisionEdgeScaleMap[y][z][x][edge], CollisionEdgeThicknessMap[y][z][x][edge], color);
+            }
+        }
+    }
 }
 
 void DrawEditor()
 {
-    SetUseZBuffer3D(TRUE);
-    SetWriteZBuffer3D(TRUE);
+    // 2026-07-21: Restored after the rendering include was accidentally zeroed; keeps editor, preview, EVENT rotation, and UI visible.
+    ClearDrawScreen();
 
-    // 2026-05-11: 当たり判定編集中に線を見やすくするため、モデルを少し透かす値を追加。
-    float editorModelOpacity = (showCollisionDebug || collisionEditMode) ? 0.35f : 1.0f;
+    // 2026-07-21: 未選択時の左ドラッグ移動で更新した注視点を使い、見ている位置を保ったまま描画する。
+    VECTOR target = VGet(camTargetX, currentLayer * BLOCK_SIZE, camTargetZ);
+    float camX = target.x + sinf(camRotY) * cosf(camRotX) * camDist;
+    float camZ = target.z + cosf(camRotY) * cosf(camRotX) * camDist;
+    float camY = target.y + sinf(camRotX) * camDist + BLOCK_SIZE * 2.0f;
+    SetCameraPositionAndTarget_UpVecY(VGet(camX, camY, camZ), target);
 
-    float mapCenterX = BLOCK_NUM_X * BLOCK_SIZE * 0.5f;
-    float mapCenterZ = BLOCK_NUM_Z * BLOCK_SIZE * 0.5f;
-
-    float camX = sinf(camRotY) * cosf(camRotX) * camDist + mapCenterX;
-    float camZ = cosf(camRotY) * cosf(camRotX) * camDist + mapCenterZ;
-    float camY = 2000.0f + sinf(camRotX) * camDist;
-
-    SetCameraPositionAndTarget_UpVecY(
-        VGet(camX, camY, camZ),
-        VGet(mapCenterX, 0.0f, mapCenterZ));
-
-#pragma region グリッド描画
-
-    if (showGrid)
-    {
-        for (int z = 0; z <= BLOCK_NUM_Z; z++)
-        {
-            DrawLine3D(
-                VGet(0.0f, 0.0f, z * BLOCK_SIZE),
-                VGet(BLOCK_NUM_X * BLOCK_SIZE, 0.0f, z * BLOCK_SIZE),
-                GetColor(80, 80, 80));
-        }
-
-        for (int x = 0; x <= BLOCK_NUM_X; x++)
-        {
-            DrawLine3D(
-                VGet(x * BLOCK_SIZE, 0.0f, 0.0f),
-                VGet(x * BLOCK_SIZE, 0.0f, BLOCK_NUM_Z * BLOCK_SIZE),
-                GetColor(80, 80, 80));
-        }
-    }
-
-#pragma endregion
-
-
-#pragma region モデル描画
-
-    for (int y = 0; y < BLOCK_NUM_Y; y++)
-    {
-        for (int z = 0; z < BLOCK_NUM_Z; z++)
-        {
-            for (int x = 0; x < BLOCK_NUM_X; x++)
-            {
-                if (FloorMap[y][z][x] >= 0)
-                {
-                    int id = FloorMap[y][z][x];
-
-                    if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
-                    {
-                        MV1SetPosition(modelHandles[id], GetModelDrawPosition(FLOOR, x, y, z, FloorRot[y][z][x]));
-                        MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(FloorRot[y][z][x]), 0.0f));
-                        MV1SetOpacityRate(modelHandles[id], editorModelOpacity);
-                        MV1DrawModel(modelHandles[id]);
-                        MV1SetOpacityRate(modelHandles[id], 1.0f);
-                    }
-                }
-
-                if (WallMapA[y][z][x] >= 0)
-                {
-                    int id = WallMapA[y][z][x];
-
-                    if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
-                    {
-                        MV1SetPosition(modelHandles[id], GetModelDrawPosition(WALL, x, y, z, WallRotA[y][z][x]));
-                        MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(GetEditorModelDrawRot(WALL, id, WallRotA[y][z][x])), 0.0f));
-                        MV1SetOpacityRate(modelHandles[id], editorModelOpacity);
-                        MV1DrawModel(modelHandles[id]);
-                        MV1SetOpacityRate(modelHandles[id], 1.0f);
-                    }
-                }
-
-                if (WallMapB[y][z][x] >= 0)
-                {
-                    int id = WallMapB[y][z][x];
-
-                    if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
-                    {
-                        MV1SetPosition(modelHandles[id], GetModelDrawPosition(WALL, x, y, z, WallRotB[y][z][x]));
-                        MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(GetEditorModelDrawRot(WALL, id, WallRotB[y][z][x])), 0.0f));
-                        MV1SetOpacityRate(modelHandles[id], editorModelOpacity);
-                        MV1DrawModel(modelHandles[id]);
-                        MV1SetOpacityRate(modelHandles[id], 1.0f);
-                    }
-                }
-
-                if (CornerMap[y][z][x] >= 0)
-                {
-                    int id = CornerMap[y][z][x];
-
-                    if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
-                    {
-                        MV1SetPosition(modelHandles[id], GetModelDrawPosition(CORNER, x, y, z, CornerRot[y][z][x]));
-                        MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(CornerRot[y][z][x]), 0.0f));
-                        MV1SetOpacityRate(modelHandles[id], editorModelOpacity);
-                        MV1DrawModel(modelHandles[id]);
-                        MV1SetOpacityRate(modelHandles[id], 1.0f);
-                    }
-                }
-
-                if (DecoMap[y][z][x] >= 0)
-                {
-                    int id = DecoMap[y][z][x];
-
-                    if (id >= 0 && id < MODEL_MAX && modelHandles[id] != -1)
-                    {
-                        MV1SetPosition(modelHandles[id], GetModelDrawPosition(DECO, x, y, z, DecoRot[y][z][x]));
-                        MV1SetRotationXYZ(modelHandles[id], VGet(0.0f, RotToRad(IsEditorStairsId(id) ? GetEditorStairsDrawRot(DecoRot[y][z][x]) : DecoRot[y][z][x]), 0.0f));
-                        MV1SetOpacityRate(modelHandles[id], editorModelOpacity);
-                        MV1DrawModel(modelHandles[id]);
-                        MV1SetOpacityRate(modelHandles[id], 1.0f);
-                    }
-                }
-            }
-        }
-    }
-
-#pragma endregion
-
-
-#pragma region EVENT / ENEMY配置マーカー描画
-
-    // 2026-06-02: ゲーム用EVENT/ENEMYの配置場所をエディター上で確認できるよう、全階層のマーカーを描画するため追加。
-    SetUseZBuffer3D(FALSE);
-    SetWriteZBuffer3D(FALSE);
-    for (int y = 0; y < BLOCK_NUM_Y; y++)
-    {
-        for (int z = 0; z < BLOCK_NUM_Z; z++)
-        {
-            for (int x = 0; x < BLOCK_NUM_X; x++)
-            {
-                if (EventMap[y][z][x] >= 0)
-                {
-                    DrawEditorEventMarker(y, z, x, EventMap[y][z][x]);
-                }
-
-                /*
-                if (EnemyMap[y][z][x] >= 0)
-                {
-                    DrawEditorEnemyMarker(y, z, x, EnemyMap[y][z][x]);
-                }
-                */
-            }
-        }
-    }
-    SetUseZBuffer3D(TRUE);
-    SetWriteZBuffer3D(TRUE);
-
-#pragma endregion
-
-
-#pragma region コピー配置プレビュー
-
-    // 2026-06-24: 通常モデルより後に描き、コピー中であることを見分けやすくする。
+    DrawEditorGrid();
+    DrawEditorPlacedModels();
     DrawCopyPreview();
+    DrawEditorHoverPreview();
+    DrawEditorEnemyPatrolPlacementPreview();
+    DrawEditorCollisionDebug();
+    DrawEditorMarkers();
+    DrawEditorSelectionRect();
+    DrawEditorMultiSelectionRects();
 
-#pragma endregion
-
-#pragma region プレビュー描画
-
-    if (IsHoverValid() && !pasteMode)
-    {
-        int previewId = GetSelectedModel();
-
-        if (previewId >= 0 && previewId < MODEL_MAX && modelHandles[previewId] != -1)
-        {
-            VECTOR pos = GetModelDrawPosition(
-                currentTab,
-                hoverX,
-                currentLayer,
-                hoverZ,
-                GetEditorPlacementRot(currentTab, hoverZ, hoverX)
-            );
-
-            pos.y += 8.0f;
-
-            MV1SetPosition(modelHandles[previewId], pos);
-            int previewRot = GetEditorPlacementRot(currentTab, hoverZ, hoverX);
-            int previewDrawRot = GetEditorModelDrawRot(currentTab, previewId, previewRot);
-            // 2026-06-29: 壁データは選択した辺のまま保持し、モデルだけセル中心側を向くように補正する。
-            MV1SetRotationXYZ(modelHandles[previewId], VGet(0.0f, RotToRad(previewDrawRot), 0.0f));
-            // 2026-05-11: 当たり判定編集中に配置プレビューも線を隠さないよう透過するため追加。
-            MV1SetOpacityRate(modelHandles[previewId], editorModelOpacity);
-            MV1DrawModel(modelHandles[previewId]);
-            MV1SetOpacityRate(modelHandles[previewId], 1.0f);
-        }
-    }
-
-#pragma endregion
-
-
-#pragma region 当たり判定デバッグ描画
-
-    // 2026-05-11: 当たり判定をモデルや配置プレビューに隠されず直接見えるよう、最後にZバッファなしで描画するため追加。
-    if (showCollisionDebug || collisionEditMode)
-    {
-        SetUseZBuffer3D(FALSE);
-        SetWriteZBuffer3D(FALSE);
-
-        // 2026-05-25: 階段で層をまたいだ後に前階層の当たり判定が残って見えないよう、現在編集中の層だけ表示する。
-        int y = currentLayer;
-        if (IsMapPosValid(y, 0, 0))
-        {
-            for (int z = 0; z < BLOCK_NUM_Z; z++)
-            {
-                for (int x = 0; x < BLOCK_NUM_X; x++)
-                {
-                    if (CollisionMap[y][z][x] >= 0)
-                    {
-                        DrawManualCollisionBox(y, z, x, GetColor(255, 60, 60));
-                    }
-
-                    if (WallMapA[y][z][x] >= 0)
-                        DrawDefaultObjectCollision(WALL, WallMapA[y][z][x], x, y, z, WallRotA[y][z][x], GetColor(255, 170, 40));
-
-                    if (WallMapB[y][z][x] >= 0)
-                        DrawDefaultObjectCollision(WALL, WallMapB[y][z][x], x, y, z, WallRotB[y][z][x], GetColor(255, 170, 40));
-
-                    if (CornerMap[y][z][x] >= 0)
-                        DrawDefaultObjectCollision(CORNER, CornerMap[y][z][x], x, y, z, CornerRot[y][z][x], GetColor(255, 170, 40));
-
-                    if (DecoMap[y][z][x] >= 0)
-                        DrawDefaultObjectCollision(DECO, DecoMap[y][z][x], x, y, z, DecoRot[y][z][x], GetColor(255, 170, 40));
-
-                    int edgeMask = CollisionEdgeMap[y][z][x] >= 0 ? CollisionEdgeMap[y][z][x] : 0;
-                    for (int edge = 0; edge < 4; edge++)
-                    {
-                        if (edgeMask & GetCollisionEdgeBit(edge))
-                            DrawCollisionEdgeLine(x, y, z, edge, CollisionEdgeScaleMap[y][z][x][edge], CollisionEdgeThicknessMap[y][z][x][edge], GetColor(40, 220, 255));
-                    }
-                }
-            }
-        }
-
-        // 2026-05-11: いま持っている配置予定オブジェクトの既定当たり判定も、置く前から直接見えるよう追加。
-        if (IsHoverValid())
-        {
-            DrawDefaultObjectCollision(currentTab, GetSelectedModel(), hoverX, currentLayer, hoverZ, currentRot, GetColor(255, 255, 0));
-        }
-    }
-
-    // 2026-05-11: 辺編集時に、いま置こうとしている辺を黄色でプレビューするため追加。
-    if (collisionEditMode && collisionEdgeEditMode && IsHoverValid())
-    {
-        DrawCollisionEdgeLine(hoverX, currentLayer, hoverZ, currentRot, CollisionEdgeScaleMap[currentLayer][hoverZ][hoverX][currentRot], CollisionEdgeThicknessMap[currentLayer][hoverZ][hoverX][currentRot], GetColor(255, 255, 0));
-    }
-
-#pragma endregion
-#pragma region ハイライト描画
-
-    if (IsHoverValid())
-    {
-        float x = hoverX * BLOCK_SIZE;
-        float z = hoverZ * BLOCK_SIZE;
-        float y = currentLayer * BLOCK_SIZE + 5.0f;
-
-        DrawLine3D(VGet(x, y, z), VGet(x + BLOCK_SIZE, y, z), GetColor(255, 255, 0));
-        DrawLine3D(VGet(x + BLOCK_SIZE, y, z), VGet(x + BLOCK_SIZE, y, z + BLOCK_SIZE), GetColor(255, 255, 0));
-        DrawLine3D(VGet(x + BLOCK_SIZE, y, z + BLOCK_SIZE), VGet(x, y, z + BLOCK_SIZE), GetColor(255, 255, 0));
-        DrawLine3D(VGet(x, y, z + BLOCK_SIZE), VGet(x, y, z), GetColor(255, 255, 0));
-    }
-
-#pragma endregion
-
-
-#pragma region 複数選択描画
-
-    // 2026-06-25: Shift+左クリックで選んだ離れたマスを、範囲選択の青枠と区別して紫枠で表示する。
-    if (!pasteMode && multiSelectCount > 0)
-    {
-        int color = GetColor(210, 80, 255);
-        for (int layer = 0; layer < BLOCK_NUM_Y; layer++)
-        {
-            for (int z = 0; z < BLOCK_NUM_Z; z++)
-            {
-                for (int x = 0; x < BLOCK_NUM_X; x++)
-                {
-                    if (!multiSelectMap[layer][z][x])
-                        continue;
-
-                    float x1 = x * BLOCK_SIZE;
-                    float z1 = z * BLOCK_SIZE;
-                    float x2 = (x + 1) * BLOCK_SIZE;
-                    float z2 = (z + 1) * BLOCK_SIZE;
-                    float y = layer * BLOCK_SIZE + 22.0f;
-
-                    DrawLine3D(VGet(x1, y, z1), VGet(x2, y, z1), color);
-                    DrawLine3D(VGet(x2, y, z1), VGet(x2, y, z2), color);
-                    DrawLine3D(VGet(x2, y, z2), VGet(x1, y, z2), color);
-                    DrawLine3D(VGet(x1, y, z2), VGet(x1, y, z1), color);
-                }
-            }
-        }
-    }
-
-#pragma endregion
-
-
-#pragma region 選択範囲描画
-
-    // 2026-06-24: 青い枠は範囲選択中だけ表示する。コピー後は移動する
-    // 貼り付けプレビュー枠へ役割を引き継ぎ、元位置へ固定表示しない。
-    if (selectMode && !pasteMode && HasValidSelection())
-    {
-        int minX = min(selectStartX, selectEndX);
-        int maxX = max(selectStartX, selectEndX);
-        int minZ = min(selectStartZ, selectEndZ);
-        int maxZ = max(selectStartZ, selectEndZ);
-
-        float x1 = minX * BLOCK_SIZE;
-        float z1 = minZ * BLOCK_SIZE;
-        float x2 = (maxX + 1) * BLOCK_SIZE;
-        float z2 = (maxZ + 1) * BLOCK_SIZE;
-        float y = selectLayer * BLOCK_SIZE + 15.0f;
-
-        DrawLine3D(VGet(x1, y, z1), VGet(x2, y, z1), GetColor(0, 255, 255));
-        DrawLine3D(VGet(x2, y, z1), VGet(x2, y, z2), GetColor(0, 255, 255));
-        DrawLine3D(VGet(x2, y, z2), VGet(x1, y, z2), GetColor(0, 255, 255));
-        DrawLine3D(VGet(x1, y, z2), VGet(x1, y, z1), GetColor(0, 255, 255));
-    }
-
-#pragma endregion
-#pragma region 開始 / ゴール描画
-
-    if (IsMapPosValid(startY, startZ, startX))
-    {
-        float x = startX * BLOCK_SIZE;
-        float z = startZ * BLOCK_SIZE;
-        float y = startY * BLOCK_SIZE + 25.0f;
-
-        DrawLine3D(VGet(x, y, z), VGet(x + BLOCK_SIZE, y, z), GetColor(0, 255, 0));
-        DrawLine3D(VGet(x + BLOCK_SIZE, y, z), VGet(x + BLOCK_SIZE, y, z + BLOCK_SIZE), GetColor(0, 255, 0));
-        DrawLine3D(VGet(x + BLOCK_SIZE, y, z + BLOCK_SIZE), VGet(x, y, z + BLOCK_SIZE), GetColor(0, 255, 0));
-        DrawLine3D(VGet(x, y, z + BLOCK_SIZE), VGet(x, y, z), GetColor(0, 255, 0));
-    }
-
-    if (IsMapPosValid(goalY, goalZ, goalX))
-    {
-        float x = goalX * BLOCK_SIZE;
-        float z = goalZ * BLOCK_SIZE;
-        float y = goalY * BLOCK_SIZE + 35.0f;
-
-        DrawLine3D(VGet(x, y, z), VGet(x + BLOCK_SIZE, y, z), GetColor(255, 0, 0));
-        DrawLine3D(VGet(x + BLOCK_SIZE, y, z), VGet(x + BLOCK_SIZE, y, z + BLOCK_SIZE), GetColor(255, 0, 0));
-        DrawLine3D(VGet(x + BLOCK_SIZE, y, z + BLOCK_SIZE), VGet(x, y, z + BLOCK_SIZE), GetColor(255, 0, 0));
-        DrawLine3D(VGet(x, y, z + BLOCK_SIZE), VGet(x, y, z), GetColor(255, 0, 0));
-    }
-
-#pragma endregion
-
-
-
-#pragma region UI / デバッグ描画
-
-    SavePendingEditorKitThumbnail();
+    int selectedPreviewModel = GetSelectedModel();
+    // 2026-07-21: 素材未選択中は左ドラッグ移動用の状態なので、配置プレビュー当たり判定を出さない。
+    if (IsHoverValid() && selectedPreviewModel >= 0)
+        DrawDefaultObjectCollision(currentTab, selectedPreviewModel, hoverX, currentLayer, hoverZ, GetEditorPlacementRot(currentTab, hoverZ, hoverX), GetColor(255, 255, 0));
     DrawEditorUI();
+    // 2026-07-22: 新規保存/名前変更/キット登録の入力欄がUIに隠れないよう、通常UIの後に重ねて描画する。
     DrawSaveNameInput();
     DrawKitNameInput();
-    // 2026-06-12: 未保存のままマップ切替しようとした時の確認を、UIの上に表示するため追加。
+    // 2026-07-22: 未保存のままマップ切替に入った時、入力だけ止まらず確認警告が必ず見えるよう最後に重ねて描画する。
     DrawLoadMapConfirm();
-
-    /* DrawFormatString(0, 40, GetColor(255, 255, 255),
-         "map=%d layer=%d rot=%d tab=%d model=%d brush=%s",
-         currentMapIndex, currentLayer, currentRot, currentTab, GetSelectedModel(),
-         brushMode ? "ON" : "OFF");
-
-     DrawFormatString(0, 60, GetColor(255, 255, 0),
-         "hoverX=%d hoverZ=%d  F5:Save F9:Load",
-         hoverX, hoverZ);
-
-     DrawFormatString(0, 80, GetColor(0, 255, 255),
-         "select=%s copy=%s size=%d,%d  V:Select Ctrl+C/V/Z",
-         selectMode ? "ON" : "OFF",
-         hasCopyData ? "YES" : "NO",
-         copySizeX, copySizeZ);
-         */
-#pragma endregion
 }
 
 #pragma endregion
-
-
-

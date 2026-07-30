@@ -1,36 +1,50 @@
-ï»¿#pragma once
+#pragma once
 #include "MapData.h"
 
-#pragma region ===== åˆæœŸåŒ– =====
+#pragma region ===== ‰Šú‰» =====
 
 void InitEditor();
 
 #pragma endregion
 
 
-#pragma region ===== æ›´æ–° =====
+#pragma region ===== XV =====
 
 void UpdateEditor();
 
 #pragma endregion
 
 
-#pragma region ===== æç”» =====
+#pragma region ===== •`‰æ =====
 
 void DrawEditor();
 
 #pragma endregion
 
 
-#pragma region ===== CSVä¿å­˜ / èª­è¾¼ =====
+#pragma region ===== CSV•Û‘¶ / “Ç =====
 
 void SaveMap();
 void SaveMapAsCurrentName();
 void LoadMap(int mapIndex);
 void LoadMapByName(const char* mapName);
+bool FindEditorEventPosition(int eventId, int& layer, int& z, int& x);
+bool SyncEditorStartGoalFromEvents();
 bool IsEditorMapDirty();
+bool IsEditorSaveInputActive();
 void MarkEditorMapDirty();
 void ClearEditorMapDirty();
+bool SaveEditorMapThumbnail(const char* thumbnailPath);
+
+struct MapInfo
+{
+    char name[64];
+    char csv[64];
+    char thumbnail[260];
+    char description[256];
+};
+
+bool LoadMapInfoByName(const char* mapName, MapInfo& info);
 //void RequestEditorLoadMap(const char* mapName);
 #pragma endregion
 
@@ -43,7 +57,7 @@ void UndoMap();
 #pragma endregion
 
 
-#pragma region ===== å£å‡¦ç† =====
+#pragma region ===== •Çˆ— =====
 
 void AutoConnectWalls();
 void UpdateWallTile(int y, int z, int x);
@@ -58,6 +72,7 @@ void UpdateEditorUI(int mx, int my, int lClick);
 bool UpdateEditorUIWheel(int mx, int my, int wheel);
 bool IsEditorWorkspacePoint(int mx, int my);
 void SaveEditorFromUI();
+void NewEditorMapFromUI();
 void RefreshEditorKitList();
 int GetEditorKitCount();
 const char* GetEditorKitName(int index);
@@ -68,16 +83,25 @@ bool RebuildEditorBaseKitCsv();
 bool RefreshSelectedEditorKitThumbnail();
 void SelectEditorKit(int index);
 void StartEditorKitRegistrationFromSelection();
+int GetEditorEventIdFromModelForUI(int modelId);
+// 2026-07-21: ‰Eƒpƒlƒ‹‚Ì”ÍˆÍ‘I‘ğƒ{ƒ^ƒ“‚ğA”ÍˆÍì¬Œã‚ÍƒRƒs[ŠJnƒ{ƒ^ƒ“‚Æ‚µ‚Äg‚¤‚½‚ß’Ç‰ÁB
+bool HasEditorRangeSelection();
+void ClearEditorRangeSelection();
+bool StartEditorCopyFromSelectionButton();
+// 2026-07-21: ‰Eƒpƒlƒ‹‚ÌF•ÏXƒ{ƒ^ƒ“‚©‚çA‘I‘ğ”ÍˆÍ‚â•¡”‘I‘ğ‚ÖŒ»İF‚ğ‚Ü‚Æ‚ß‚Ä“K—p‚·‚éB
+bool ApplyEditorColorToSelection();
 
 #pragma endregion
 
 
-#pragma region ===== å…±é€šå‡¦ç† =====
+#pragma region ===== ‹¤’Êˆ— =====
 
 void ClearCurrentLayer();
 void ResetAllMap();
 extern int CollisionCornerScaleMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int CollisionCornerThicknessMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern char gameCurrentMapName[64];
+extern char gameCurrentMapDescription[256];
 
 #pragma endregion
+

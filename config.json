@@ -13,11 +13,11 @@
     "KeyRight": "D",
     "PadCancel": "A",
     "PadConfirm": "B",
-    "PadDash": "PSL",
-    "PadJump": "X",
+    "PadDash": "X",
+    "PadJump": "Y",
     "PadPause": "START",
     "SEVolume": 73,
-    "masterVolume": 98,
+    "masterVolume": 48,
     "mouseSensitivity": 0.001500000013038516,
     "padSensitivity": 0.029999999329447746
 }

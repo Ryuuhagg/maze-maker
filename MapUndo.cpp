@@ -21,9 +21,14 @@ struct UndoData
 
     int DecoMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
     int DecoRot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+    // 2026-07-16: 0.5床の上層接続方向もUndoで戻す。
+    int ClimbLinkMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
     // 2026-06-11: EVENTと分離した敵配置もUndoで戻せるよう追加。
-    // int EnemyMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+    int EnemyMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+    int EnemyPatrolCountMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+    int EnemyPatrolXMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X][ENEMY_PATROL_POINT_MAX];
+    int EnemyPatrolZMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X][ENEMY_PATROL_POINT_MAX];
     int EventMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
     // 2026-05-11: 当たり判定編集もUndoで戻せるよう追加。
@@ -80,9 +85,14 @@ void PushUndo()
 
     memcpy(data.DecoMap, ::DecoMap, sizeof(::DecoMap));
     memcpy(data.DecoRot, ::DecoRot, sizeof(::DecoRot));
+    memcpy(data.ClimbLinkMap, ::ClimbLinkMap, sizeof(::ClimbLinkMap));
 
     // 2026-06-11: Undo履歴に敵配置を保存するため追加。
-    // memcpy(data.EnemyMap, ::EnemyMap, sizeof(::EnemyMap));
+    memcpy(data.EnemyMap, ::EnemyMap, sizeof(::EnemyMap));
+    // 2026-07-08: 敵ごとの巡回ポイント編集もUndoで戻せるよう保存する。
+    memcpy(data.EnemyPatrolCountMap, ::EnemyPatrolCountMap, sizeof(::EnemyPatrolCountMap));
+    memcpy(data.EnemyPatrolXMap, ::EnemyPatrolXMap, sizeof(::EnemyPatrolXMap));
+    memcpy(data.EnemyPatrolZMap, ::EnemyPatrolZMap, sizeof(::EnemyPatrolZMap));
     memcpy(data.EventMap, ::EventMap, sizeof(::EventMap));
     // 2026-05-11: 当たり判定編集をUndo履歴に保存するため追加。
     memcpy(data.CollisionMap, ::CollisionMap, sizeof(::CollisionMap));
@@ -131,9 +141,14 @@ void UndoMap()
 
     memcpy(::DecoMap, data.DecoMap, sizeof(::DecoMap));
     memcpy(::DecoRot, data.DecoRot, sizeof(::DecoRot));
+    memcpy(::ClimbLinkMap, data.ClimbLinkMap, sizeof(::ClimbLinkMap));
 
     // 2026-06-11: Undo実行時に敵配置も復元するため追加。
-    // memcpy(::EnemyMap, data.EnemyMap, sizeof(::EnemyMap));
+    memcpy(::EnemyMap, data.EnemyMap, sizeof(::EnemyMap));
+    // 2026-07-08: Undo実行時に巡回ポイントも敵配置と一緒に復元する。
+    memcpy(::EnemyPatrolCountMap, data.EnemyPatrolCountMap, sizeof(::EnemyPatrolCountMap));
+    memcpy(::EnemyPatrolXMap, data.EnemyPatrolXMap, sizeof(::EnemyPatrolXMap));
+    memcpy(::EnemyPatrolZMap, data.EnemyPatrolZMap, sizeof(::EnemyPatrolZMap));
     memcpy(::EventMap, data.EventMap, sizeof(::EventMap));
     // 2026-05-11: Undo実行時に当たり判定編集も戻すため追加。
     memcpy(::CollisionMap, data.CollisionMap, sizeof(::CollisionMap));
@@ -163,3 +178,6 @@ void UndoMap()
 
     undoList.pop_back();
 }
+
+
+

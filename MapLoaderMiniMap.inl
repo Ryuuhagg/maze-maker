@@ -121,12 +121,35 @@ void DrawMiniMap(VECTOR playerPos)
 
             int top = MiniMapPosY(mapY, cellSize, (float)(z + 1));
             int bottom = MiniMapPosY(mapY, cellSize, (float)z);
-            bool walkable = GameFloorMap[layer][z][x] >= 0 || IsStairsId(GameDecoMap[layer][z][x]);
+            bool walkable = GameFloorMap[layer][z][x] >= 0;
             if (walkable)
                 DrawBox(left + 1, top + 1, right - 1, bottom - 1, GetColor(42, 58, 66), TRUE);
+            if (HasClimbHintAtCell(layer, z, x))
+            {
+                // 2026-07-16: 0.5床から上層床へ跳べる場所を、ミニマップでは階段マーク風に表示する。
+                int cx = (left + right) / 2;
+                int cy = (top + bottom) / 2;
+                DrawBox(cx - 3, cy - 3, cx + 3, cy + 3, GetColor(255, 220, 90), TRUE);
 
-            if (IsStairsId(GameDecoMap[layer][z][x]))
-                DrawBox(left + 3, top + 3, right - 3, bottom - 3, GetColor(115, 175, 80), TRUE);
+                if (IsClimbHintDirection(layer, z, x, 0)) DrawLine(cx, cy, cx, top + 3, GetColor(255, 220, 90), 2);
+                if (IsClimbHintDirection(layer, z, x, 1)) DrawLine(cx, cy, right - 3, cy, GetColor(255, 220, 90), 2);
+                if (IsClimbHintDirection(layer, z, x, 2)) DrawLine(cx, cy, cx, bottom - 3, GetColor(255, 220, 90), 2);
+                if (IsClimbHintDirection(layer, z, x, 3)) DrawLine(cx, cy, left + 3, cy, GetColor(255, 220, 90), 2);
+            }
+
+            if (HasClimbDownHintAtCell(layer, z, x))
+            {
+                // 2026-07-16: 上層床側にも、下の0.5床へ降りられる場所をミニマップへ表示する。
+                int cx = (left + right) / 2;
+                int cy = (top + bottom) / 2;
+                DrawCircle(cx, cy, 4, GetColor(255, 150, 70), TRUE);
+
+                if (IsClimbDownHintDirection(layer, z, x, 0)) DrawLine(cx, cy, cx, top + 3, GetColor(255, 150, 70), 2);
+                if (IsClimbDownHintDirection(layer, z, x, 1)) DrawLine(cx, cy, right - 3, cy, GetColor(255, 150, 70), 2);
+                if (IsClimbDownHintDirection(layer, z, x, 2)) DrawLine(cx, cy, cx, bottom - 3, GetColor(255, 150, 70), 2);
+                if (IsClimbDownHintDirection(layer, z, x, 3)) DrawLine(cx, cy, left + 3, cy, GetColor(255, 150, 70), 2);
+            }
+
 
             if (GameCollisionMap[layer][z][x] >= 0)
                 DrawBox(left + 2, top + 2, right - 2, bottom - 2, GetColor(120, 55, 70), TRUE);
@@ -185,6 +208,18 @@ void DrawMiniMap(VECTOR playerPos)
     DrawCellMarker(gameStartY, gameStartZ, gameStartX, GetColor(80, 180, 255));
     DrawCellMarker(gameGoalY, gameGoalZ, gameGoalX, GetColor(255, 220, 70));
 
+    for (int i = 0; i < e.GetEnemyCount(); i++)
+    {
+        VECTOR enemyPos;
+        int enemyLayer = 0;
+        if (!e.GetEnemyPosition(i, enemyPos, enemyLayer))
+            continue;
+
+        int enemyX = WorldToCell(enemyPos.x);
+        int enemyZ = WorldToCell(enemyPos.z);
+        DrawCellMarker(enemyLayer, enemyZ, enemyX, GetColor(255, 70, 95));
+    }
+
     float playerCellX = playerPos.x / BLOCK_SIZE;
     float playerCellZ = playerPos.z / BLOCK_SIZE;
 
@@ -193,13 +228,16 @@ void DrawMiniMap(VECTOR playerPos)
 
     //int playerX = mapX + (int)((playerPos.x / BLOCK_SIZE) * cellSize);
     //int playerY = mapY + (int)((playerPos.z / BLOCK_SIZE) * cellSize);
-    DrawCircle(playerX, playerY, 6, GetColor(255, 45, 45), TRUE);
-    DrawCircle(playerX, playerY, 6, GetColor(255, 245, 180), FALSE);
+    DrawCircle(playerX, playerY, 6, GetColor(80, 230, 255), TRUE);
+    DrawCircle(playerX, playerY, 6, GetColor(255, 255, 255), FALSE);
 
     DrawFormatString(mapX, mapY + mapSize + 8, GetColor(255, 255, 255), "LAYER %d", layer);
 
     SetUseZBuffer3D(TRUE);
     SetWriteZBuffer3D(TRUE);
 }
+
+
+
 
 

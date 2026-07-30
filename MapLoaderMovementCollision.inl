@@ -6,12 +6,57 @@ static bool IsWalkableCell(int y, int z, int x)
     if (GameFloorMap[y][z][x] >= 0)
         return true;
 
-    if (IsStairsId(GameDecoMap[y][z][x]))
+    // 2026-07-22: BFS/セル移動でも、プレイヤーが実際に乗れる0.5床と上面床を通行可能にする。
+    if (IsLowPlatformDecoId(GameDecoMap[y][z][x]))
         return true;
 
+    if (y > 0 && IsOverheadDecoId(GameDecoMap[y - 1][z][x]))
+        return true;
+
+    // 2026-07-16: 階段機能はいったん使わないため、階段だけでは歩けるセルにしない。
     return false;
 }
 
+static bool IsGameCornerWallPairId(int id)
+{
+    // 2026-07-21: モデル28/29は直角に交わる壁2枚の角モデルとして、壁辺判定へ変換する。
+    return id == 28 || id == 29;
+}
+
+static int GetGameCornerWallPairCollisionRot(int id, int rot)
+{
+    // 2026-07-21: モデル28/29は描画時に個別回転補正しているため、当たり判定も見た目側の回転へ合わせる。
+    int baseRot = rot & 3;
+    int collisionRot = baseRot;
+    if (id == 28)
+        collisionRot = (baseRot + 3) & 3;
+    else if (id == 29)
+        collisionRot = (baseRot + 1) & 3;
+
+    // 2026-07-21: 28/29の当たり判定全体が1方向ずれていたため、全回転をさらに-1方向へ調整する。
+    if (id == 28 || id == 29)
+        collisionRot = (collisionRot + 3) & 3;
+
+    // 2026-07-21: モデル29だけ回転が2個分ずれていたため、29の当たり判定だけ180度補正する。
+    if (id == 29)
+        collisionRot = (collisionRot + 2) & 3;
+
+    return collisionRot;
+}
+
+static bool IsGameCornerWallPairEdge(int rot, int edge)
+{
+    // 2026-07-21: 元のGetCornerArcDataと同じ回転対応にし、0=下左/1=下右/2=上右/3=上左の2辺へ合わせる。
+    int r = rot & 3;
+    int e = edge & 3;
+    switch (r)
+    {
+    case 0: return e == 2 || e == 3;
+    case 1: return e == 2 || e == 1;
+    case 2: return e == 0 || e == 1;
+    default: return e == 0 || e == 3;
+    }
+}
 bool HasWallEdge(int y, int z, int x, int edge)
 {
     if (!IsGameMapPosValid(y, z, x))
@@ -36,6 +81,13 @@ bool HasWallEdge(int y, int z, int x, int edge)
 
             if (HasManualCollisionEdge(cy, cz, cx, rot))
             {
+                return true;
+            }
+
+            if (IsGameCornerWallPairId(GameCornerMap[cy][cz][cx]) &&
+                IsGameCornerWallPairEdge(GetGameCornerWallPairCollisionRot(GameCornerMap[cy][cz][cx], GameCornerRot[cy][cz][cx]), rot))
+            {
+                // 2026-07-21: モデル28/29の角壁は、BFS/セル移動でも壁2辺として扱う。
                 return true;
             }
 
@@ -75,22 +127,22 @@ bool CanMoveCellToCell(int y, int fromX, int fromZ, int toX, int toZ)
 
     if (dx == 0 && dz == -1)
     {
-        // if (HasWallEdge(y, fromZ, fromX, 0)) return false;
+         if (HasWallEdge(y, fromZ, fromX, 0)) return false;
         //if (HasWallEdge(y, toZ, toX, 2)) return false;
     }
     else if (dx == 1 && dz == 0)
     {
-        //if (HasWallEdge(y, fromZ, fromX, 1)) return false;
+        if (HasWallEdge(y, fromZ, fromX, 1)) return false;
         //if (HasWallEdge(y, toZ, toX, 3)) return false;
     }
     else if (dx == 0 && dz == 1)
     {
-        // if (HasWallEdge(y, fromZ, fromX, 2)) return false;
+         if (HasWallEdge(y, fromZ, fromX, 2)) return false;
         // if (HasWallEdge(y, toZ, toX, 0)) return false;
     }
     else if (dx == -1 && dz == 0)
     {
-        // if (HasWallEdge(y, fromZ, fromX, 3)) return false;
+         if (HasWallEdge(y, fromZ, fromX, 3)) return false;
         // if (HasWallEdge(y, toZ, toX, 1)) return false;
     }
     else
@@ -257,17 +309,63 @@ static bool IsPointInsideLowPlatformCell(int y, int z, int x, float worldX, floa
         worldZ <= bz + info.depth;
 }
 
+static const float FLOOR_BLOCK_VISIBLE_TOP_OFFSET = -2.0f;
+static const float FLOOR_BLOCK_VISIBLE_THICKNESS = BLOCK_SIZE * 0.22f;
+static const float LOW_PLATFORM_VISIBLE_THICKNESS = BLOCK_SIZE * 0.5f;
+
+// 2026-07-15: 表示している床ブロックの上面・下面と当たり判定の高さをそろえる。
+static float GetVisibleBlockTopY(int y, float topOffset)
+{
+    return y * BLOCK_SIZE + topOffset + FLOOR_BLOCK_VISIBLE_TOP_OFFSET;
+}
+
+static float GetVisibleBlockBottomY(int y, float topOffset, float height)
+{
+    return GetVisibleBlockTopY(y, topOffset) - height;
+}
+
+static bool IsCircleOnLowPlatformCell(int y, int z, int x, float worldX, float worldZ, float radius)
+{
+    if (!IsGameMapPosValid(y, z, x))
+        return false;
+
+    int decoId = GameDecoMap[y][z][x];
+    if (!IsLowPlatformDecoId(decoId))
+        return false;
+
+    CollisionInfo& info = collisionTable[decoId];
+    if (info.type != COLL_BOX)
+        return false;
+
+    float bx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float bz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+
+    return CircleHitBox(worldX, worldZ, radius, bx, bz, info.width, info.depth);
+}
+
 static bool FindLowPlatformAtWorld(int y, float worldX, float worldZ)
 {
     int cellX = WorldToCell(worldX);
     int cellZ = WorldToCell(worldZ);
 
-    // マス境界で足場が消えないよう、周囲セルの装飾6も確認する。
+    // 2026-07-10: 半マス足場は通常床と同じく、現在座標のセルだけを判定する。
+    return IsPointInsideLowPlatformCell(y, cellZ, cellX, worldX, worldZ);
+}
+
+static bool FindLowPlatformAtWorld(int y, float worldX, float worldZ, float radius)
+{
+    if (radius <= 0.0f)
+        return FindLowPlatformAtWorld(y, worldX, worldZ);
+
+    int cellX = WorldToCell(worldX);
+    int cellZ = WorldToCell(worldZ);
+
+    // 2026-07-13: プレイヤー中心だけだと端で沈むため、足元の円が重なる半マス足場を上面として扱う。
     for (int dz = -1; dz <= 1; dz++)
     {
         for (int dx = -1; dx <= 1; dx++)
         {
-            if (IsPointInsideLowPlatformCell(y, cellZ + dz, cellX + dx, worldX, worldZ))
+            if (IsCircleOnLowPlatformCell(y, cellZ + dz, cellX + dx, worldX, worldZ, radius))
                 return true;
         }
     }
@@ -339,40 +437,14 @@ static bool IsWalkableAtWorld(int y, float worldX, float worldZ)
     // 装飾6の上面も周囲セルから探し、マス境界で足元が埋まらないようにする。
     return FindLowPlatformAtWorld(y, worldX, worldZ);
 }
-static bool IsWalkableAtWorldForStairsTransition(int y, float worldX, float worldZ)
-{
-    // 2026-05-13: 階段でレイヤーが切り替わった直後も、半径の一部が下階段側に残って進めるよう追加。
-    if (IsWalkableAtWorld(y, worldX, worldZ))
-        return true;
-
-    // 2026-05-25: 階段移動中だけは同じ層/一つ下の階段セルを歩ける場所として扱い、関数未呼び出しの警告も消す。
-    if (IsStairsAtWorldInLayer(y, worldX, worldZ))
-        return true;
-
-    // 2026-06-29: 階段の途中で上階扱いになっても、足元の下階段を歩ける場所として残す。
-    if (IsStairsAtWorldInLayer(y - 1, worldX, worldZ))
-        return true;
-
-    return false;
-}
-
 static bool HasWalkableSurfaceForCircle(int y, float worldX, float worldZ, float radius)
 {
-    // 階段は1マス内で高さが変わるので、足元中心が階段なら通す。
-    // 周囲5点まで見ると階段セルの端で弾かれて登れなくなる。
-    if (IsStairsAtWorldInLayer(y, worldX, worldZ))
-        return true;
-
-    // 2026-06-29: 階段の途中で上階扱いになっても、足元の下階段を歩ける場所として残す。
-    if (IsStairsAtWorldInLayer(y - 1, worldX, worldZ))
-        return true;
-
-    // 2026-05-13: レイヤー切り替え直後の上階判定でも、下の階段にかかっている足元を歩ける扱いにするため変更。
-    if (!IsWalkableAtWorldForStairsTransition(y, worldX, worldZ)) return false;
-    if (!IsWalkableAtWorldForStairsTransition(y, worldX - radius, worldZ)) return false;
-    if (!IsWalkableAtWorldForStairsTransition(y, worldX + radius, worldZ)) return false;
-    if (!IsWalkableAtWorldForStairsTransition(y, worldX, worldZ - radius)) return false;
-    if (!IsWalkableAtWorldForStairsTransition(y, worldX, worldZ + radius)) return false;
+    // 2026-07-16: 階段機能はいったん使わないため、足場確認は床/0.5段差だけを見る。
+    if (!IsWalkableAtWorld(y, worldX, worldZ)) return false;
+    if (!IsWalkableAtWorld(y, worldX - radius, worldZ)) return false;
+    if (!IsWalkableAtWorld(y, worldX + radius, worldZ)) return false;
+    if (!IsWalkableAtWorld(y, worldX, worldZ - radius)) return false;
+    if (!IsWalkableAtWorld(y, worldX, worldZ + radius)) return false;
 
     return true;
 }
@@ -458,7 +530,8 @@ static bool HitMapObjects(
     int y,
     float worldX,
     float worldZ,
-    float radius)
+    float radius,
+    float currentY)
 {
     int cellX = WorldToCell(worldX);
     int cellZ = WorldToCell(worldZ);
@@ -551,9 +624,9 @@ static bool HitMapObjects(
                         along = ((worldX - x1) * lineDX + (worldZ - z1) * lineDZ) / lineLenSq;
                     }
 
-                    // 2026-06-29: 壁端へ半分めり込めないよう、端側に少しだけ余白判定を残す。
+                    // 2026-07-15: ジャンプ中に壁端の角へめり込まないよう、端側の余白判定を広げる。
                     float lineLen = sqrtf(lineLenSq);
-                    float endMarginRate = lineLen > 0.0001f ? (radius * 0.45f) / lineLen : 0.0f;
+                    float endMarginRate = lineLen > 0.0001f ? (radius * 0.85f) / lineLen : 0.0f;
                     if (along < -endMarginRate || along > 1.0f + endMarginRate)
                         return false;
 
@@ -576,15 +649,16 @@ static bool HitMapObjects(
                     }
 
                     float frontThickness = BLOCK_SIZE * 0.19f;
-                    float backThickness = BLOCK_SIZE * 0.0f;
+                    float backThickness = BLOCK_SIZE * 0.03f;
                     float rateThickness = thicknessScale / 100.0f;
                     frontThickness *= rateThickness;
                     backThickness *= rateThickness;
-
+                    // 2026-07-15: 裏側まで正面厚みの箱で広がると、壁の後ろ判定が大きすぎるため線の表裏判定だけで止める。
                     if (signedDist >= 0.0f)
                         return dist <= radius + frontThickness;
 
-                    float backRadius = radius * 0.35f;
+                    float backRadius = radius * 0.75f;
+                    // 2026-07-15: 壁裏の当たり判定が広く感じるため、裏側だけ半径と厚みを小さめにして見た目へ寄せる。
                     return dist <= backRadius + backThickness;
                 };
 
@@ -640,6 +714,17 @@ static bool HitMapObjects(
 
             if (cornerId >= 0)
             {
+                if (IsGameCornerWallPairId(cornerId))
+                {
+                    // 2026-07-21: モデル28/29は見た目通り、角を構成する壁2枚分の衝突判定にする。
+                    for (int edge = 0; edge < 4; edge++)
+                    {
+                        if (IsGameCornerWallPairEdge(GetGameCornerWallPairCollisionRot(cornerId, GameCornerRot[y][z][x]), edge) && CheckWall(edge, 100, 100))
+                            return true;
+                    }
+                    continue;
+                }
+
                 CollisionInfo& cornerInfo = collisionTable[cornerId];
                 // 2026-05-20: コーナーもモデルごとのBOX/CIRCLE指定を優先し、未指定の時だけ従来の斜め線判定を使う。
                 if (cornerInfo.type == COLL_CIRCLE)
@@ -758,7 +843,23 @@ static bool HitMapObjects(
             if (decoId >= 0)
             {
                 if (IsLowPlatformDecoId(decoId))
+                {
+                    float platformTopY = GetVisibleBlockTopY(y, GetLowPlatformTopOffset());
+                    float platformBottomY = GetVisibleBlockBottomY(y, GetLowPlatformTopOffset(), LOW_PLATFORM_VISIBLE_THICKNESS);
+                    CollisionInfo& info = collisionTable[decoId];
+                    float bx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                    float bz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+
+                    if (currentY >= platformBottomY - 1.0f && currentY < platformTopY + 1.0f &&
+                        CircleHitBox(worldX, worldZ, radius, bx, bz, info.width, info.depth))
+                    {
+                        // 半マスブロック側面として衝突
+                        return true;
+                    }
+
+                    // 上面に乗れる高さなら、装飾6の汎用BOX判定では止めない。
                     continue;
+                }
 
                 if (IsOverheadDecoId(decoId))
                 {
@@ -980,7 +1081,8 @@ static bool GetStairsProgressInLayer(int y, float worldX, float worldZ, float& p
 
 bool IsStairsAtWorldLayer(int layer, float worldX, float worldZ)
 {
-    return IsStairsAtWorldInLayer(layer, worldX, worldZ);
+    // 2026-07-16: 階段機能はいったん使わないため、外部から見ても階段なし扱いにする。
+    return false;
 }
 
 static bool IsStairsLowerEntry(int y, float worldX, float worldZ)
@@ -997,76 +1099,22 @@ static bool IsStairsUpperEntry(int y, float worldX, float worldZ)
 
 bool TryGetStairsLoadLayer(int currentLayer, float worldX, float worldZ, int& loadLayer)
 {
+    // 2026-07-16: 階段機能はいったん使わないため、階段による先読み層切替はしない。
     loadLayer = currentLayer;
-
-    float progress = 0.0f;
-    if (GetStairsProgressInLayer(currentLayer, worldX, worldZ, progress))
-    {
-        // 2026-06-29: 表示だけは階段に乗った時点で上階を先読みし、上がり際に真っ暗にならないようにする。
-        if (currentLayer + 1 < BLOCK_NUM_Y)
-        {
-            loadLayer = currentLayer + 1;
-            return true;
-        }
-
-        loadLayer = currentLayer;
-        return true;
-    }
-
-    if (currentLayer - 1 >= 0 && GetStairsProgressInLayer(currentLayer - 1, worldX, worldZ, progress))
-    {
-        // 2026-05-20: 上階側から階段へ戻る時は、下端側へ入ったら下階をロード対象に戻す。
-        loadLayer = progress <= 0.42f ? currentLayer - 1 : currentLayer;
-        return true;
-    }
-
     return false;
 }
 bool TryMoveLayerByStairs(int& layer, float worldX, float worldZ)
 {
-    float progress = 0.0f;
-
-    // 2026-06-29: 真っ黒になる前の挙動へ戻し、階段に触れた時点で上階扱いにする。
-    if (GetStairsProgressInLayer(layer, worldX, worldZ, progress))
-    {
-        if (layer + 1 < BLOCK_NUM_Y)
-        {
-            layer++;
-            return true;
-        }
-
-        return false;
-    }
-
-    if (layer - 1 >= 0 && GetStairsProgressInLayer(layer - 1, worldX, worldZ, progress))
-    {
-        if (progress <= 0.28f)
-        {
-            layer--;
-            return true;
-        }
-    }
-
+    // 2026-07-16: 階段機能はいったん使わないため、階段では層を切り替えない。
     return false;
 }
 bool IsStairsAtWorld(float worldX, float worldZ)
 {
-    int x = WorldToCell(worldX);
-    int z = WorldToCell(worldZ);
-
-    for (int y = BLOCK_NUM_Y - 1; y >= 0; y--)
-    {
-        if (!IsGameMapPosValid(y, z, x))
-            continue;
-
-        if (IsStairsId(GameDecoMap[y][z][x]))
-            return true;
-    }
-
+    // 2026-07-16: 階段機能はいったん使わないため、ゲーム中の階段判定は常に無効にする。
     return false;
 }
 
-float GetMapGroundY(float worldX, float worldZ, float currentY)
+float GetMapGroundY(float worldX, float worldZ, float currentY, float groundRadius)
 {
     int x = WorldToCell(worldX);
     int z = WorldToCell(worldZ);
@@ -1074,12 +1122,13 @@ float GetMapGroundY(float worldX, float worldZ, float currentY)
     if (x < 0 || x >= BLOCK_NUM_X || z < 0 || z >= BLOCK_NUM_Z)
         return 0.0f;
 
-    for (int y = BLOCK_NUM_Y - 1; y >= 0; y--)
+    int loadedLayer = GetGameLoadedLayer();
+    for (int y = loadedLayer; y <= loadedLayer; y++)
     {
         float baseY = y * BLOCK_SIZE;
 
         // 2026-05-25: 階層ロード後に別階層の床へ吸われないよう、現在の高さから遠い上階は地面候補から外す。
-        if (baseY > currentY + BLOCK_SIZE * 0.75f)
+        if (baseY > currentY + BLOCK_SIZE * 0.1f)
             continue;
 
         // 装飾7の上面は1つ上の階の床。ただし下をくぐっている時に上へ吸い上がらないよう、
@@ -1089,44 +1138,18 @@ float GetMapGroundY(float worldX, float worldZ, float currentY)
         {
             return baseY;
         }
-
-        if (IsStairsId(GameDecoMap[y][z][x]))
+        // 2026-07-16: 階段機能はいったん使わないため、階段は地面高さの候補にしない。
+        //2026 - 07-10 段差条件のため追加
+        if (FindLowPlatformAtWorld(y, worldX, worldZ, groundRadius))
         {
-            float localX = Clamp01((worldX - x * BLOCK_SIZE) / BLOCK_SIZE);
-            float localZ = Clamp01((worldZ - z * BLOCK_SIZE) / BLOCK_SIZE);
+            float platformY = baseY + GetLowPlatformTopOffset();
 
-            float t = 1.3f;
-
-            // 2026-05-19: 階段の当たり判定と高さ方向は前のまま使い、見た目だけを反転する。
-            switch (GameDecoRot[y][z][x] % 4)
+            if (currentY >= platformY - 80.0f)
             {
-            case 0: // 奥→手前へ上る
-                t = 1.0f - localZ;
-                break;
-
-            case 1: // 左→右へ上る
-                t = 1.0f - localX;
-                break;
-
-            case 2: // 手前→奥へ上る
-                t = localZ;
-                break;
-
-            case 3: // 右→左へ上る
-                t = localX;
-                break;
+                return platformY;
             }
 
-            // なめらか補正
-            t = sqrtf(t);
-
-            // 全方向同じ高さ補正
-            return baseY + t * BLOCK_SIZE;
-        }
-
-        if (FindLowPlatformAtWorld(y, worldX, worldZ))
-        {
-            return baseY + GetLowPlatformTopOffset();
+            //return baseY + GetLowPlatformTopOffset();
         }
 
         if (GameFloorMap[y][z][x] >= 0)
@@ -1135,62 +1158,69 @@ float GetMapGroundY(float worldX, float worldZ, float currentY)
 
     return 0.0f;
 }
+float GetMapGroundY(float worldX, float worldZ, float currentY)
+{
+    return GetMapGroundY(worldX, worldZ, currentY, 0.0f);
+}
 float GetMapGroundY(float worldX, float worldZ)
 {
-    return GetMapGroundY(worldX, worldZ, BLOCK_SIZE * (BLOCK_NUM_Y + 1));
+    return GetMapGroundY(worldX, worldZ, BLOCK_SIZE * (BLOCK_NUM_Y + 1), 0.0f);
 }
 #pragma endregion
 
 
 #pragma region ===== 連続移動判定 =====
 
+static float playerVerticalJumpBaseY = 0.0f;
+static float playerLastHorizontalMoveX = 0.0f;
+static float playerLastHorizontalMoveZ = 0.0f;
+
+
 static bool CanStandPlayerPosition(
     int y,
     float worldX,
     float worldZ,
-    float radius)
+    float radius,
+    float currentY)
 {
     if (!HasWalkableSurfaceForCircle(y, worldX, worldZ, radius))
         return false;
 
-    if (HitMapObjects(y, worldX, worldZ, radius))
+    if (HitMapObjects(y, worldX, worldZ, radius, currentY))
         return false;
 
     return true;
 }
 
-bool CanMoveWorldPosition(int y, float worldX, float worldZ, float radius)
+bool CanCameraMoveWorldPosition(int y, float worldX, float worldZ, float radius, float currentY)
+{
+    if (!IsGameMapPosValid(y, WorldToCell(worldZ), WorldToCell(worldX)))
+        return true;
+
+    // 2026-07-13: カメラは床の上を歩く物体ではないので、床セル外でも壁・装飾に当たらなければ通す。
+    return !HitMapObjects(y, worldX, worldZ, radius, currentY);
+}
+
+bool CanMoveWorldPosition(int y, float worldX, float worldZ, float radius, float currentY)
 {
     // 2026-05-11: デバッグや他クラスから、ワールド座標が移動可能か直接確認できるよう追加。
-    return CanStandPlayerPosition(y, worldX, worldZ, radius);
+    return CanStandPlayerPosition(y, worldX, worldZ, radius, currentY);
 }
-static bool CanStandPlayerPositionByWorld(float worldX, float worldZ, float radius, int currentLayer)
+bool CanMoveWorldPosition(int y, float worldX, float worldZ, float radius)
 {
-    // 2026-05-25: 通常移動では今いる層だけの当たり判定を使い、階段端イベントでだけ隣の層をロード扱いで許可する。
-    if (CanStandPlayerPosition(currentLayer, worldX, worldZ, radius))
-        return true;
-
-    if (currentLayer + 1 < BLOCK_NUM_Y &&
-        IsStairsUpperEntry(currentLayer, worldX, worldZ) &&
-        CanStandPlayerPosition(currentLayer + 1, worldX, worldZ, radius))
-    {
-        return true;
-    }
-
-    if (currentLayer - 1 >= 0 &&
-        IsStairsLowerEntry(currentLayer - 1, worldX, worldZ) &&
-        CanStandPlayerPosition(currentLayer - 1, worldX, worldZ, radius))
-    {
-        return true;
-    }
-
-    return false;
+    return CanMoveWorldPosition(y, worldX, worldZ, radius, y * BLOCK_SIZE);
+}
+static bool CanStandPlayerPositionByWorld(float worldX, float worldZ, float radius, float currentY ,int currentLayer)
+{
+    // 2026-07-15: ドラクエ風の1層ずつ切り替えに合わせ、通常移動判定も現在層だけを見る。
+    return CanStandPlayerPosition(currentLayer, worldX, worldZ, radius, currentY);
 }
 
 VECTOR ResolvePlayerMapCollision(
     VECTOR currentPos,
     VECTOR nextPos,
     float radius,
+    float currentY,
     int currentLayer)
 {
     VECTOR result = currentPos;
@@ -1199,10 +1229,13 @@ VECTOR ResolvePlayerMapCollision(
     float moveX = nextPos.x - currentPos.x;
     float moveZ = nextPos.z - currentPos.z;
 
+
+
     if (CanStandPlayerPositionByWorld(
         nextPos.x,
         nextPos.z,
         radius,
+        currentY,
         currentLayer))
     {
         result.x = nextPos.x;
@@ -1214,6 +1247,7 @@ VECTOR ResolvePlayerMapCollision(
             currentPos.x + moveX,
             currentPos.z,
             radius,
+            currentY,
             currentLayer))
         {
             result.x = currentPos.x + moveX;
@@ -1223,6 +1257,7 @@ VECTOR ResolvePlayerMapCollision(
             result.x,
             currentPos.z + moveZ,
             radius,
+            currentY,
             currentLayer))
         {
             result.z = currentPos.z + moveZ;
@@ -1235,6 +1270,510 @@ VECTOR ResolvePlayerMapCollision(
     return result;
 }
 
+VECTOR ResolvePlayerMapCollision(
+    VECTOR currentPos,
+    VECTOR nextPos,
+    float radius,
+    int currentLayer)
+{
+    return ResolvePlayerMapCollision(currentPos, nextPos, radius, currentPos.y, currentLayer);
+}
+
+// 2026-07-15: 床ブロックの下面・側面判定で、床セルだけを探すため追加。
+static bool IsCircleTouchingFloorCell(int y, float worldX, float worldZ, float radius)
+{
+    int cellX = WorldToCell(worldX);
+    int cellZ = WorldToCell(worldZ);
+    float half = BLOCK_SIZE * 0.5f;
+
+    for (int dz = -1; dz <= 1; dz++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            int x = cellX + dx;
+            int z = cellZ + dz;
+            if (!IsGameMapPosValid(y, z, x))
+                continue;
+
+            bool hasFloor = GameFloorMap[y][z][x] >= 0;
+            if (!hasFloor && y > 0)
+                hasFloor = IsOverheadDecoId(GameDecoMap[y - 1][z][x]);
+
+            if (!hasFloor)
+                continue;
+
+            float bx = x * BLOCK_SIZE + half;
+            float bz = z * BLOCK_SIZE + half;
+            if (CircleHitBox(worldX, worldZ, radius, bx, bz, half, half))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+// 2026-07-15: 床下面判定は側面のかすりを拾わないよう、プレイヤー中心が床セル下にある時だけ使う。
+static bool IsPointUnderFloorCell(int y, float worldX, float worldZ)
+{
+    int x = WorldToCell(worldX);
+    int z = WorldToCell(worldZ);
+    if (!IsGameMapPosValid(y, z, x))
+        return false;
+
+    if (GameFloorMap[y][z][x] >= 0)
+        return true;
+
+    return y > 0 && IsOverheadDecoId(GameDecoMap[y - 1][z][x]);
+}
+// 2026-07-15: 完全に1層ずつ判定するため、ロード中ではない上階床ブロック側面は現在層の壁扱いにしない。
+static bool IsBlockedByUpperFloorSide(int currentLayer, float worldX, float worldZ, float radius, float currentY, bool canMoveToUpperLayer)
+{
+    return false;
+}
+
+static bool IsLowerClimbHintLandingCell(int currentLayer, float worldX, float worldZ)
+{
+    if (currentLayer <= 0)
+        return false;
+
+    int lowerLayer = currentLayer - 1;
+    int x = WorldToCell(worldX);
+    int z = WorldToCell(worldZ);
+    if (!IsGameMapPosValid(lowerLayer, z, x))
+        return false;
+
+    for (int dir = 0; dir < 4; dir++)
+    {
+        if (!IsClimbHintDirection(lowerLayer, z, x, dir))
+            continue;
+
+        int dx = 0;
+        int dz = 0;
+        GetClimbHintDirOffset(dir, dx, dz);
+        int upperX = x + dx;
+        int upperZ = z + dz;
+        if (IsGameMapPosValid(currentLayer, upperZ, upperX) && GameFloorMap[currentLayer][upperZ][upperX] >= 0)
+            return true;
+    }
+
+    return false;
+}
+static bool HasPlayerMoveSurface(int currentLayer, float worldX, float worldZ, float radius, float currentY, bool canMoveToUpperLayer)
+{
+    // 2026-07-15: 当たり判定も完全に1層ずつにするため、通常は現在層だけを見る。
+    if (HasWalkableSurfaceForCircle(currentLayer, worldX, worldZ, radius))
+        return true;
+
+    if (FindLowPlatformAtWorld(currentLayer, worldX, worldZ, radius))
+        return true;
+
+    // 2026-07-16: 上層から黄色マーク元の0.5床へ戻る時だけ、下層の足場へ横移動できるようにする。
+    return IsLowerClimbHintLandingCell(currentLayer, worldX, worldZ);
+}
+
+static bool IsMovingDownToLowerSurface(int currentLayer, float worldX, float worldZ, float radius, float currentY)
+{
+    // 2026-07-15: 完全に1層ずつ判定するため、下層への横移動許可はここでは扱わない。
+    return false;
+}
+static bool IsMovingOntoUpperFloor(int currentLayer, float worldX, float worldZ, float radius, float currentY, bool canMoveToUpperLayer)
+{
+    // 2026-07-15: 完全に1層ずつ判定するため、上層床への横移動許可は層切替後に扱う。
+    return false;
+}
+// 2026-07-15: プレイヤー横移動は現在層の床・壁・装飾だけで判定する。
+static bool CanPlayerMoveHorizontally(int y, float worldX, float worldZ, float radius, float currentY, bool canMoveToUpperLayer)
+{
+    int cellX = WorldToCell(worldX);
+    int cellZ = WorldToCell(worldZ);
+    if (cellX < 0 || cellX >= BLOCK_NUM_X || cellZ < 0 || cellZ >= BLOCK_NUM_Z)
+        return false;
+
+    if (!HasPlayerMoveSurface(y, worldX, worldZ, radius, currentY, canMoveToUpperLayer))
+    {
+        // 2026-07-15: 現在層に床・0.5段差がない空マスへは横移動できないようにする。
+        return false;
+    }
+
+    if (IsBlockedByUpperFloorSide(y, worldX, worldZ, radius, currentY, canMoveToUpperLayer))
+        return false;
+    if (HitMapObjects(y, worldX, worldZ, radius, currentY))
+    {
+        // 2026-07-15: 当たり判定を完全に1層ずつにするため、横移動では現在層の壁・装飾だけを見る。
+        return false;
+    }
+
+    if (HitActiveLockedDoorObject(y, worldX, worldZ, radius))
+    {
+        // 2026-07-21: 鍵扉は開錠されるまで移動判定でも壁として扱う。
+        return false;
+    }
+
+    return true;
+}
+VECTOR ResolvePlayerMapCollisionForPlayer(VECTOR currentPos, VECTOR nextPos, float radius, float jumpY, int currentLayer)
+{
+    float layerBaseY = currentLayer * BLOCK_SIZE;
+    float collisionHeight = jumpY;
+    if (currentPos.y - layerBaseY > collisionHeight)
+        collisionHeight = currentPos.y - layerBaseY;
+    if (collisionHeight < 0.0f)
+        collisionHeight = 0.0f;
+
+    // 2026-07-15: 横判定も現在の足元高さを使い、同じ層内だけで壁・足場を確認する。
+    float currentY = layerBaseY + collisionHeight;
+    // 2026-07-15: 以前の上層判定フラグは引数互換のため残すが、現在は完全に1層ずつ判定する。
+    bool canMoveToUpperLayer = false;
+    VECTOR result = currentPos;
+    float moveX = nextPos.x - currentPos.x;
+    float moveZ = nextPos.z - currentPos.z;
+
+    // 2026-07-17: プレイヤー側を変更せず、降り口の外側へ進もうとしているかを判定するため移動方向を記録する。
+    float moveLen = sqrtf(moveX * moveX + moveZ * moveZ);
+    if (moveLen > 0.001f)
+    {
+        playerLastHorizontalMoveX = moveX / moveLen;
+        playerLastHorizontalMoveZ = moveZ / moveLen;
+    }
+    else
+    {
+        playerLastHorizontalMoveX = 0.0f;
+        playerLastHorizontalMoveZ = 0.0f;
+    }
+
+    if (CanPlayerMoveHorizontally(currentLayer, nextPos.x, nextPos.z, radius, currentY, canMoveToUpperLayer))
+    {
+        result.x = nextPos.x;
+        result.z = nextPos.z;
+    }
+    else
+    {
+        if (CanPlayerMoveHorizontally(currentLayer, currentPos.x + moveX, currentPos.z, radius, currentY, canMoveToUpperLayer))
+            result.x = currentPos.x + moveX;
+
+        if (CanPlayerMoveHorizontally(currentLayer, result.x, currentPos.z + moveZ, radius, currentY, canMoveToUpperLayer))
+            result.z = currentPos.z + moveZ;
+    }
+
+    result.y = nextPos.y;
+    return result;
+}
+
+static bool IsPlayerNearClimbHintEdge(int x, int z, int dir, float worldX, float worldZ)
+{
+    float localX = Clamp01((worldX - x * BLOCK_SIZE) / BLOCK_SIZE);
+    float localZ = Clamp01((worldZ - z * BLOCK_SIZE) / BLOCK_SIZE);
+    const float edgeThreshold = 0.34f;
+
+    switch (dir & 3)
+    {
+    case 0: return localZ <= edgeThreshold;
+    case 1: return localX >= 1.0f - edgeThreshold;
+    case 2: return localZ >= 1.0f - edgeThreshold;
+    case 3: return localX <= edgeThreshold;
+    }
+
+    return false;
+}
+
+static bool IsPlayerOnClimbDownHintMark(int x, int z, int dir, float worldX, float worldZ, float groundRadius)
+{
+    // 2026-07-17: 中心点だけだと赤い降り口線に触れても降りられないため、プレイヤーの足元円と表示線の接触で判定する。
+    float left = x * BLOCK_SIZE;
+    float right = (x + 1) * BLOCK_SIZE;
+    float front = z * BLOCK_SIZE;
+    float back = (z + 1) * BLOCK_SIZE;
+    float inset = BLOCK_SIZE * 0.28f;
+    float strip = BLOCK_SIZE * 0.07f;
+    float x1 = left + inset;
+    float x2 = right - inset;
+    float z1 = front + inset;
+    float z2 = back - inset;
+
+    switch (dir & 3)
+    {
+    case 0:
+        z1 = front + strip;
+        z2 = front + strip * 2.0f;
+        break;
+    case 1:
+        x1 = right - strip * 2.0f;
+        x2 = right - strip;
+        break;
+    case 2:
+        z1 = back - strip * 2.0f;
+        z2 = back - strip;
+        break;
+    case 3:
+        x1 = left + strip;
+        x2 = left + strip * 2.0f;
+        break;
+    }
+
+    return CircleHitAABB(worldX, worldZ, groundRadius, x1, z1, x2, z2);
+}
+static bool TryClimbToUpperFloorFromHalfStep(VECTOR& pos, float& jumpY, float& vy, bool& isGround, int& layer, float groundRadius)
+{
+    /*if (isGround || !IsMapHalfStepGroundY(playerVerticalJumpBaseY))
+        return false;*/// ジャンプ高さチェックをしない
+
+    if (!IsMapHalfStepGroundY(playerVerticalJumpBaseY))
+        return false;
+
+    
+    int baseLayer = GetMapGroundLayerFromY(playerVerticalJumpBaseY);
+    if (baseLayer + 1 >= BLOCK_NUM_Y)
+        return false;
+
+    int x = WorldToCell(pos.x);
+    int z = WorldToCell(pos.z);
+    if (!IsGameMapPosValid(baseLayer, z, x))
+        return false;
+
+    float upperGroundY = (baseLayer + 1) * BLOCK_SIZE;
+    /*float targetFootY = playerVerticalJumpBaseY + jumpY;
+    if (targetFootY < upperGroundY - 8.0f)
+        return false;*/// ジャンプ高さチェックをしない
+
+
+    for (int dir = 0; dir < 4; dir++)
+    {
+        if (!IsClimbHintDirection(baseLayer, z, x, dir))
+            continue;
+
+        if (!IsPlayerNearClimbHintEdge(x, z, dir, pos.x, pos.z))
+            continue;
+
+        int dx = 0;
+        int dz = 0;
+        GetClimbHintDirOffset(dir, dx, dz);
+        int targetX = x + dx;
+        int targetZ = z + dz;
+        int upperLayer = baseLayer + 1;
+
+        float targetXWorld = targetX * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        float targetZWorld = targetZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        if (!CanStandPlayerPosition(upperLayer, targetXWorld, targetZWorld, groundRadius, upperGroundY))
+            continue;
+
+        // 2026-07-16: 0.5床のマーク方向へ跳んだ時だけ、隣の上層床へ着地させる。
+        pos.x = targetXWorld;
+        pos.z = targetZWorld;
+        pos.y = upperGroundY;
+        layer = upperLayer;
+        jumpY = 0.0f;
+        vy = 0.0f;
+        isGround = true;
+        playerVerticalJumpBaseY = upperGroundY;
+        SetGameLoadedLayer(layer);
+        return true;
+    }
+
+    return false;
+}
+static bool TryStepDownToLowerHalfStep(VECTOR& pos, float& jumpY, float& vy, bool& isGround, int& layer, float groundRadius)
+{
+    if (!isGround || layer <= 0)
+        return false;
+
+    int upperX = WorldToCell(pos.x);
+    int upperZ = WorldToCell(pos.z);
+    if (!IsGameMapPosValid(layer, upperZ, upperX))
+        return false;
+
+    for (int dir = 0; dir < 4; dir++)
+    {
+        if (!IsClimbDownHintDirection(layer, upperZ, upperX, dir))
+            continue;
+
+        if (!IsPlayerOnClimbDownHintMark(upperX, upperZ, dir, pos.x, pos.z, groundRadius))
+            continue;
+
+        int dx = 0;
+        int dz = 0;
+        GetClimbHintDirOffset(dir, dx, dz);
+
+        // 2026-07-17: ブロック端にいるだけでは降ろさず、その端の外側へ進もうとした時だけ降ろす。
+        float moveDot = playerLastHorizontalMoveX * dx + playerLastHorizontalMoveZ * dz;
+        if (moveDot < 0.45f)
+            continue;
+
+        int lowerLayer = layer - 1;
+        int lowerX = upperX + dx;
+        int lowerZ = upperZ + dz;
+        float targetXWorld = lowerX * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        float targetZWorld = lowerZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+
+        if (!FindLowPlatformAtWorld(lowerLayer, targetXWorld, targetZWorld, groundRadius))
+            continue;
+
+        float lowerGroundY = lowerLayer * BLOCK_SIZE + GetLowPlatformTopOffset();
+
+        // 2026-07-16: 上層床の降り口側の端に来たら、対応する下の0.5床へ降ろす。
+        layer = lowerLayer;
+        pos.x = targetXWorld;
+        pos.z = targetZWorld;
+        pos.y = lowerGroundY;
+        jumpY = 0.0f;
+        vy = 0.0f;
+        isGround = true;
+        playerVerticalJumpBaseY = lowerGroundY;
+        SetGameLoadedLayer(layer);
+        return true;
+    }
+
+    return false;
+}
+// 2026-07-15: 上昇中に上階床の下面へ頭をぶつけるため、プレイヤー半径込みで床セルを天井として探す。
+static float FindPlayerCeilingY(float worldX, float worldZ, float radius, float currentY)
+{
+    int loadedLayer = GetGameLoadedLayer();
+    for (int y = loadedLayer; y <= loadedLayer; y++)
+    {
+        float ceilingY = GetVisibleBlockTopY(y, 0.0f);
+        if (ceilingY <= currentY + 1.0f)
+            continue;
+
+        if (ceilingY > currentY + BLOCK_SIZE * 1.25f)
+            break;
+
+        if (IsCircleTouchingFloorCell(y, worldX, worldZ, radius))
+        {
+            // 2026-07-15: 中心点だけだと肩側が上階床の下面へめり込むため、横移動と同じ半径で天井を拾う。
+            return ceilingY;
+        }
+    }
+
+    return -1.0f;
+}
+void UpdatePlayerMapVertical(VECTOR& pos, float& jumpY, float& vy, bool& isGround, int& layer, bool jumpTrigger, bool stepDownTrigger, float gravity, float groundRadius)
+{
+    float layerBaseY = layer * BLOCK_SIZE;
+    float standingGroundY = GetMapGroundY(pos.x, pos.z, pos.y, groundRadius);
+
+    if (isGround)
+    {
+        // 2026-07-17: 降り口に触れただけで降りないよう、ブロック端の外側へ進もうとした時だけ0.5床へ降ろす。
+        if (TryStepDownToLowerHalfStep(pos, jumpY, vy, isGround, layer, groundRadius))
+            return;
+
+        if (standingGroundY < pos.y - 20.0f)
+        {
+            // 2026-07-13: 床端から出た時は下の床へ吸着せず、現在高さから落下を始める。
+            isGround = false;
+            playerVerticalJumpBaseY = pos.y;
+            jumpY = 0.0f;
+            vy = 0.0f;
+        }
+        else
+        {
+            layer = GetMapGroundLayerFromY(standingGroundY);
+            layerBaseY = layer * BLOCK_SIZE;
+            playerVerticalJumpBaseY = standingGroundY;
+            jumpY = 0.0f;
+            vy = 0.0f;
+        }
+    }
+
+    if (jumpTrigger && isGround)
+    {
+        playerVerticalJumpBaseY = standingGroundY;
+        vy = 20.0f;
+        isGround = false;
+    
+    }
+
+    if (!isGround)
+    {
+        vy += gravity;
+        jumpY += vy;
+
+        // 2026-07-15: 上面より高く上がった後までジャンプ開始高さで天井判定すると、床下面へ吸い戻されるため現在の足元高さで見る。
+        if (vy > 0.0f)
+        {
+            float ceilingY = FindPlayerCeilingY(pos.x, pos.z, groundRadius, pos.y);
+            if (ceilingY >= 0.0f)
+            {
+                float targetFootY = playerVerticalJumpBaseY + jumpY;
+                int ceilingLayer = GetMapGroundLayerFromY(ceilingY);
+                float ceilingGroundY = GetVisibleBlockTopY(ceilingLayer, 0.0f);
+                bool canStepOntoUpperFloor =
+                    IsMapHalfStepGroundY(playerVerticalJumpBaseY) &&
+                    targetFootY >= ceilingGroundY - 1.0f &&
+                    IsCircleTouchingFloorCell(ceilingLayer, pos.x, pos.z, groundRadius);
+
+                if (!canStepOntoUpperFloor)
+                {
+                    // 2026-07-15: 足元Yを床下面ぴったりまで上げるとプレイヤーの半径ぶん天井へめり込むため、半径ぶん手前で止める。
+                    float ceilingBottomY = ceilingY - FLOOR_BLOCK_VISIBLE_THICKNESS;
+                    float maxFootY = ceilingBottomY - groundRadius;
+                    if (targetFootY > maxFootY)
+                    {
+                        jumpY = maxFootY - playerVerticalJumpBaseY;
+                        if (jumpY < 0.0f)
+                            jumpY = 0.0f;
+                        vy = 0.0f;
+                    }
+                }
+            }
+        }
+    }
+
+    if (TryClimbToUpperFloorFromHalfStep(pos, jumpY, vy, isGround, layer, groundRadius))
+        return;
+
+    float groundProbeHeight = jumpY;
+    if (pos.y - layerBaseY > groundProbeHeight)
+        groundProbeHeight = pos.y - layerBaseY;
+    if (groundProbeHeight > LOW_PLATFORM_VISIBLE_THICKNESS)
+        groundProbeHeight = LOW_PLATFORM_VISIBLE_THICKNESS;
+    if (groundProbeHeight < 0.0f)
+        groundProbeHeight = 0.0f;
+
+    float groundProbeY = layerBaseY + groundProbeHeight;
+    if (!isGround && IsMapHalfStepGroundY(playerVerticalJumpBaseY))
+    {
+        float jumpWorldY = playerVerticalJumpBaseY + jumpY;
+        if (jumpWorldY > groundProbeY)
+            groundProbeY = jumpWorldY;
+    }
+
+    float groundY = GetMapGroundY(pos.x, pos.z, groundProbeY, groundRadius);
+    // 2026-07-15: 完全に1層ずつ判定するため、0.5段差ジャンプ中でも上層床は層切替後まで着地候補にしない。
+
+    if (!isGround && IsMapHalfStepGroundY(playerVerticalJumpBaseY) && groundY < playerVerticalJumpBaseY)
+    {
+        // 2026-07-15: 0.5段差からの上昇が足りない時、下床へ吸われず元の段差へ戻れるようにする。
+        float baseGroundY = GetMapGroundY(pos.x, pos.z, playerVerticalJumpBaseY, 0.0f);
+        if (IsMapHalfStepGroundY(baseGroundY))
+            groundY = baseGroundY;
+    }
+
+    float targetY = isGround ? groundY : playerVerticalJumpBaseY + jumpY;
+
+    bool landedOnGround = false;
+    if (!isGround && vy <= 0.0f && targetY <= groundY)
+    {
+        jumpY = 0.0f;
+        vy = 0.0f;
+        isGround = true;
+        playerVerticalJumpBaseY = groundY;
+        targetY = groundY;
+        layer = GetMapGroundLayerFromY(groundY);
+        landedOnGround = true;
+    }
+
+    if (!isGround || landedOnGround)
+    {
+        // 2026-07-15: 空中では補間で見た目だけ遅れると上昇時にワープっぽく見えるため、物理高さをそのまま使う。
+        pos.y = targetY;
+    }
+    else
+    {
+        pos.y += (targetY - pos.y) * 0.2f;
+    }
+}
+
 bool IsGoalWorldPosition(int y, float worldX, float worldZ)
 {
     int x = WorldToCell(worldX);
@@ -1243,7 +1782,127 @@ bool IsGoalWorldPosition(int y, float worldX, float worldZ)
     return IsGoalCell(y, z, x);
 }
 
+// 7/17 階層移動先を取得する関数
+bool GetLayerMoveDestination(
+    int currentLayer,
+    int currentX,
+    int currentZ,
+    int direction,
+    MapNode& destination)
+{
+    int dx = 0;
+    int dz = 0;
+
+    GetClimbHintDirOffset(direction, dx, dz);
+
+    // 下層の0.5床から上層へ移動
+    if (IsClimbHintDirection(
+        currentLayer,
+        currentZ,
+        currentX,
+        direction))
+    {
+        int nextLayer = currentLayer + 1;
+        int nextX = currentX + dx;
+        int nextZ = currentZ + dz;
+
+        if (!IsGameMapPosValid(nextLayer, nextZ, nextX))
+            return false;
+
+        if (!IsWalkableCell(nextLayer, nextZ, nextX))
+            return false;
+
+        destination = {
+            nextLayer,
+            nextX,
+            nextZ
+        };
+
+        return true;
+    }
+
+    // 上層から下層の0.5床へ移動
+    if (IsClimbDownHintDirection(
+        currentLayer,
+        currentZ,
+        currentX,
+        direction))
+    {
+        int nextLayer = currentLayer - 1;
+        int nextX = currentX + dx;
+        int nextZ = currentZ + dz;
+
+        if (!IsGameMapPosValid(nextLayer, nextZ, nextX))
+            return false;
+
+        if (!IsLowPlatformDecoId(
+            GameDecoMap[nextLayer][nextZ][nextX]))
+        {
+            return false;
+        }
+
+        destination = {
+            nextLayer,
+            nextX,
+            nextZ
+        };
+
+        return true;
+    }
+
+    return false;
+}
+
 #pragma endregion
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

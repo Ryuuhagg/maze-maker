@@ -1,4 +1,3 @@
-#if 0
 #include "GameEnemies.h"
 #include "MapData.h"
 #include "MapLoader.h"
@@ -266,4 +265,3 @@ bool GetGameEnemyPosition(int index, VECTOR& pos, int& layer)
     layer = enemy.layer;
     return true;
 }
-#endif

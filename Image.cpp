@@ -17,3 +17,15 @@ ImagePath resultGOAL_image = {
 	600,
 	200
 };
+
+ImagePath resultLose_image = {
+	"Image/GAMEOVER.png",
+	1600,
+	1200
+};
+
+ImagePath heart_image = {
+	"Image/ハート.png",
+	960,
+	960
+};

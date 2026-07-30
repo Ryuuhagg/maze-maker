@@ -1,11 +1,11 @@
-ï»¿#pragma once
+#pragma once
 #include "DxLib.h"
 
 /// <summary>
-/// ã“ã®ã‚¹ã‚¯ãƒªãƒ—ãƒˆã¯Editorã¨ã‚²ãƒ¼ãƒ ã«è¡¨ç¤ºã™ã‚‹ãŸã‚ã®2ã¤ã§å¿…è¦ã¨ãªã‚‹ãŸã‚ãšã£ã¨ã‚ªãƒ³
+/// ‚±‚ÌƒXƒNƒŠƒvƒg‚ÍEditor‚ÆƒQ[ƒ€‚É•\¦‚·‚é‚½‚ß‚Ì2‚Â‚Å•K—v‚Æ‚È‚é‚½‚ß‚¸‚Á‚ÆƒIƒ“
 /// </summary>
 
-#pragma region ===== ç”»é¢è¨­å®š =====
+#pragma region ===== ‰æ–Êİ’è =====
 
 const int SCREEN_W = 1280;
 const int SCREEN_H = 720;
@@ -14,7 +14,7 @@ const int UI_WIDTH = 260;
 #pragma endregion
 
 
-#pragma region ===== ãƒãƒƒãƒ—ã‚µã‚¤ã‚º =====
+#pragma region ===== ƒ}ƒbƒvƒTƒCƒY =====
 
 const int BLOCK_NUM_X = 20;
 const int BLOCK_NUM_Y = 8;
@@ -27,7 +27,7 @@ const float cornerRadius = BLOCK_SIZE * 0.18f;
 #pragma endregion
 
 
-#pragma region ===== ã‚¿ãƒ–ç¨®é¡ =====
+#pragma region ===== ƒ^ƒuí—Ş =====
 
 enum TabType
 {
@@ -39,51 +39,79 @@ enum TabType
     EVENT,
     TAB_MAX
 };
+enum EditorEraserTarget
+{
+    ERASER_TARGET_FLOOR = 0,
+    ERASER_TARGET_WALL,
+    ERASER_TARGET_CORNER,
+    ERASER_TARGET_DECO,
+    ERASER_TARGET_ENEMY,
+    ERASER_TARGET_EVENT,
+    ERASER_TARGET_ALL,
+    ERASER_TARGET_MAX
+};
+#pragma endregion
+
+
+#pragma region ===== ƒ‚ƒfƒ‹”ãŒÀ =====
+
+// 2026-07-22: ’Ç‰Á•Çƒ‚ƒfƒ‹‚ğ•¡”“o˜^‚Å‚«‚é‚æ‚¤ACSVƒ‚ƒfƒ‹ID‚ÌãŒÀ‚ğ­‚µL‚°‚éB
+const int MODEL_MAX = 40;
+const int ENEMY_PATROL_POINT_MAX = 8;
 
 #pragma endregion
 
 
-#pragma region ===== ãƒ¢ãƒ‡ãƒ«æ•°ä¸Šé™ =====
-
-const int MODEL_MAX = 32;
-
-#pragma endregion
-
-
-#pragma region ===== ãƒãƒƒãƒ—ãƒ‡ãƒ¼ã‚¿ =====
+#pragma region ===== ƒ}ƒbƒvƒf[ƒ^ =====
 
 extern int FloorMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int FloorRot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-21: ƒGƒfƒBƒ^[‚ÌF•ÏXƒ{ƒ^ƒ“‚Å’u‚¢‚½F”Ô†‚ğA°‚²‚Æ‚É•Û‘¶/•`‰æ‚·‚éB
+extern int FloorColorMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
 extern int WallMapA[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int WallMapB[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
 extern int WallRotA[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int WallRotB[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-21: •ÇA/B‚»‚ê‚¼‚ê‚Ì”z’uF‚ğ•Û‚µA“¯‚¶ƒ‚ƒfƒ‹‚Å‚àŒ©‚½–Ú‚ğ•Ï‚¦‚ç‚ê‚é‚æ‚¤‚É‚·‚éB
+extern int WallColorMapA[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+extern int WallColorMapB[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
 extern int CornerMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int CornerRot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-21: Špƒ‚ƒfƒ‹‚É‚àƒGƒfƒBƒ^[ã‚ÌF•ÏX‚ğ”½‰f‚·‚é‚½‚ß’Ç‰ÁB
+extern int CornerColorMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
 extern int DecoMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int DecoRot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-21: ‘•üƒ‚ƒfƒ‹‚É‚à”z’u‚²‚Æ‚ÌF”Ô†‚ğ‚½‚¹‚é‚½‚ß’Ç‰ÁB
+extern int DecoColorMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-07-16: 0.5°‚©‚çã‘w°‚ÖÚ‘±‚Å‚«‚é•ûŒü‚ğA4•ûŒüƒrƒbƒg‚Å•Û‘¶‚·‚éB
+extern int ClimbLinkMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
-// 2026-06-11: EVENTã¨ENEMYã‚’åˆ¥CSV/åˆ¥é…åˆ—ã§ä¿å­˜ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-11: EVENT‚ÆENEMY‚ğ•ÊCSV/•Ê”z—ñ‚Å•Û‘¶‚·‚é‚½‚ß’Ç‰ÁB
 extern int EnemyMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+extern int EnemyPatrolCountMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+extern int EnemyPatrolXMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X][ENEMY_PATROL_POINT_MAX];
+extern int EnemyPatrolZMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X][ENEMY_PATROL_POINT_MAX];
 extern int EventMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
-// 2026-05-11: ã‚¨ãƒ‡ã‚£ã‚¿ãƒ¼ã§æ‰‹å‹•è¨­å®šã—ãŸå½“ãŸã‚Šåˆ¤å®šã‚’ä¿å­˜ã—ã€Loaderå´ã§ã‚‚ä½¿ã†ãŸã‚è¿½åŠ ã€‚
+// 2026-07-21: ”à‚È‚ÇEVENTƒ‚ƒfƒ‹‚ğ’u‚¢‚½Œü‚«‚Å•Û‘¶/•`‰æ‚·‚é‚½‚ßAEVENT—p‚Ì‰ñ“]’l‚ğ‹¤—L‚·‚éB
+extern int EventRot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
+// 2026-05-11: ƒGƒfƒBƒ^[‚Åè“®İ’è‚µ‚½“–‚½‚è”»’è‚ğ•Û‘¶‚µALoader‘¤‚Å‚àg‚¤‚½‚ß’Ç‰ÁB
 extern int CollisionMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
-// 2026-05-20: æ‰‹å‹•å½“ãŸã‚Šåˆ¤å®šã‚’BoxCollideré¢¨ã«ç›´æ¥ç·¨é›†ã™ã‚‹ãŸã‚ã€ä¸­å¿ƒã‚ªãƒ•ã‚»ãƒƒãƒˆã¨ã‚µã‚¤ã‚ºã‚’å…±æœ‰ã™ã‚‹ã€‚
+// 2026-05-20: è“®“–‚½‚è”»’è‚ğBoxCollider•—‚É’¼Ú•ÒW‚·‚é‚½‚ßA’†SƒIƒtƒZƒbƒg‚ÆƒTƒCƒY‚ğ‹¤—L‚·‚éB
 extern int CollisionBoxOffsetXMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int CollisionBoxOffsetZMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int CollisionBoxSizeXMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int CollisionBoxSizeZMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
-// 2026-05-11: Loaderã®å£ãƒ©ã‚¤ãƒ³åˆ¤å®šã¨åŒã˜ã€Œè¾ºå˜ä½ã€ã®å½“ãŸã‚Šåˆ¤å®šã‚’ç·¨é›†ãƒ»ä¿å­˜ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-05-11: Loader‚Ì•Çƒ‰ƒCƒ“”»’è‚Æ“¯‚¶u•Ó’PˆÊv‚Ì“–‚½‚è”»’è‚ğ•ÒWE•Û‘¶‚·‚é‚½‚ß’Ç‰ÁB
 extern int CollisionEdgeMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
-// 2026-05-11: è¾ºå½“ãŸã‚Šåˆ¤å®šã‚’ä¼¸ã°ã—ãŸã‚Šç¸®ã‚ãŸã‚Šã™ã‚‹é•·ã•å€ç‡ã‚’ä¿å­˜ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-05-11: •Ó“–‚½‚è”»’è‚ğL‚Î‚µ‚½‚èk‚ß‚½‚è‚·‚é’·‚³”{—¦‚ğ•Û‘¶‚·‚é‚½‚ß’Ç‰ÁB
 extern int CollisionEdgeScaleMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X][4];
-// 2026-05-11: è¾ºå½“ãŸã‚Šåˆ¤å®šã®åšã•å€ç‡ã‚’ç·¨é›†ãƒ»ä¿å­˜ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-05-11: •Ó“–‚½‚è”»’è‚ÌŒú‚³”{—¦‚ğ•ÒWE•Û‘¶‚·‚é‚½‚ß’Ç‰ÁB
 extern int CollisionEdgeThicknessMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X][4];
-// 2026-05-13: ã‚³ãƒ¼ãƒŠãƒ¼å½“ãŸã‚Šåˆ¤å®šã®é•·ã•ãƒ»åšã¿ãƒ»å¥¥è¡Œã‚’ä¿å­˜/èª­è¾¼/Undoã§å…±æœ‰ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-05-13: ƒR[ƒi[“–‚½‚è”»’è‚Ì’·‚³EŒú‚İE‰œs‚ğ•Û‘¶/“Ç/Undo‚Å‹¤—L‚·‚é‚½‚ß’Ç‰ÁB
 extern int CollisionCornerScaleMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int CollisionCornerThicknessMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 extern int CollisionCornerOffsetMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
@@ -91,32 +119,32 @@ extern int CollisionCornerOffsetMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 #pragma endregion
 
 
-#pragma region ===== ã‚¨ãƒ‡ã‚£ã‚¿çŠ¶æ…‹ =====
+#pragma region ===== ƒGƒfƒBƒ^ó‘Ô =====
 
 extern int currentLayer;
 extern int currentRot;
 extern int currentMapIndex;
-// 2026-05-26: åå‰ã‚’ä»˜ã‘ã¦ä¿å­˜ã—ãŸå¾Œã€åŒã˜CSVã¸ä¸Šæ›¸ãä¿å­˜ã™ã‚‹ãŸã‚ç¾åœ¨ã®ãƒãƒƒãƒ—åã‚’å…±æœ‰ã™ã‚‹ã€‚
+// 2026-05-26: –¼‘O‚ğ•t‚¯‚Ä•Û‘¶‚µ‚½ŒãA“¯‚¶CSV‚Öã‘‚«•Û‘¶‚·‚é‚½‚ßŒ»İ‚Ìƒ}ƒbƒv–¼‚ğ‹¤—L‚·‚éB
 extern char gameCurrentMapName[64];
-// 2026-05-26: ãƒãƒƒãƒ—é¸æŠæ™‚ã«ã€ç•ªå·ã§ã¯ãªãCSVåã§é¸ã¹ã‚‹ã‚ˆã†ç¾åœ¨é¸æŠä¸­ã®åå‰ã‚’å…±æœ‰ã™ã‚‹ã€‚
+// 2026-05-26: ƒ}ƒbƒv‘I‘ğ‚ÉA”Ô†‚Å‚Í‚È‚­CSV–¼‚Å‘I‚×‚é‚æ‚¤Œ»İ‘I‘ğ’†‚Ì–¼‘O‚ğ‹¤—L‚·‚éB
 extern char selectedMapName[64];
 
 extern int currentTab;
 extern int selectedModel;
-// 2026-06-25: ã‚³ãƒ”ãƒ¼é…ç½®ä¸­ã®æ¡ˆå†…ã‚’UIä¸‹éƒ¨ã«å‡ºã™ãŸã‚ã€ã‚³ãƒ”ãƒ¼çŠ¶æ…‹ã‚’UIæç”»å´ã‹ã‚‰å‚ç…§ã™ã‚‹ã€‚
+// 2026-06-25: ƒRƒs[”z’u’†‚ÌˆÄ“à‚ğUI‰º•”‚Éo‚·‚½‚ßAƒRƒs[ó‘Ô‚ğUI•`‰æ‘¤‚©‚çQÆ‚·‚éB
 extern bool pasteMode;
 extern int copyRotation;
 extern int copySizeX;
 extern int copySizeZ;
-// 2026-06-02: é€šå¸¸ç·¨é›†ç”»é¢ã¨ã‚³ãƒ©ã‚¤ãƒ€ãƒ¼å°‚ç”¨ç”»é¢ã‚’UI/å…¥åŠ›å´ã§å…±æœ‰ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-02: ’Êí•ÒW‰æ–Ê‚ÆƒRƒ‰ƒCƒ_[ê—p‰æ–Ê‚ğUI/“ü—Í‘¤‚Å‹¤—L‚·‚é‚½‚ß’Ç‰ÁB
 extern int editorScreenMode;
-// 2026-06-02: å³å´ç´ æä¸€è¦§ã®ã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«é‡ã‚’MapEditor/MapUIã§å…±æœ‰ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-02: ‰E‘¤‘fŞˆê——‚ÌƒXƒNƒ[ƒ‹—Ê‚ğMapEditor/MapUI‚Å‹¤—L‚·‚é‚½‚ß’Ç‰ÁB
 extern int editorPaletteScrollY;
 
 #pragma endregion
 
 
-#pragma region ===== ãƒã‚¦ã‚¹ã‚«ãƒ¼ã‚½ãƒ«ä½ç½® =====
+#pragma region ===== ƒ}ƒEƒXƒJ[ƒ\ƒ‹ˆÊ’u =====
 
 extern int hoverX;
 extern int hoverZ;
@@ -124,59 +152,80 @@ extern int hoverZ;
 #pragma endregion
 
 
-#pragma region ===== ã‚«ãƒ¡ãƒ© =====
+#pragma region ===== ƒJƒƒ‰ =====
 
 extern float camRotY;
 extern float camRotX;
 extern float camDist;
+// 2026-07-21: ƒGƒfƒBƒ^[‚ÌƒJƒƒ‰•½sˆÚ“®‚Åg‚¤’‹“_B
+extern float camTargetX;
+extern float camTargetZ;
 
 #pragma endregion
 
 
-#pragma region ===== ãƒ¢ãƒ‡ãƒ« / UIç”»åƒ =====
+#pragma region ===== ƒ‚ƒfƒ‹ / UI‰æ‘œ =====
 
 extern int modelHandles[MODEL_MAX];
 extern int paletteTex[MODEL_MAX];
+// 2026-07-21: ƒ‚ƒfƒ‹‚²‚Æ‚ÌŒ´“_ƒYƒŒ‚ğCSV‚©‚ç”÷’²®‚·‚é‚½‚ß’Ç‰ÁB
+extern float modelOffsetX[MODEL_MAX];
+extern float modelOffsetZ[MODEL_MAX];
+extern float modelOffsetY[MODEL_MAX];
 
 #pragma endregion
 
 
-#pragma region ===== UIç”¨ãƒ¢ãƒ‡ãƒ«ä¸€è¦§ =====
+#pragma region ===== UI—pƒ‚ƒfƒ‹ˆê—— =====
 
 extern int tabModelList[TAB_MAX][16];
 extern int tabModelCount[TAB_MAX];
 
 #pragma endregion
 
-#pragma region ===== å½“ãŸã‚Šåˆ¤å®š =====
+#pragma region ===== “–‚½‚è”»’è =====
 
 bool CanMoveCellToCell(int y, int fromX, int fromZ, int toX, int toZ);
 bool IsCellBlocked(int y, int z, int x);
 
 #pragma endregion
 
-#pragma region ===== è¡¨ç¤ºè¨­å®š =====
+#pragma region ===== •\¦İ’è =====
 
 extern bool showGrid;
+// 2026-07-07: ƒGƒfƒBƒ^[3D•\¦‚ÅŒ»İ‚Ì‘wˆÈŠO‚ğ‰B‚·‚½‚ß’Ç‰ÁB
+extern bool showCurrentLayerOnly;
+// 2026-07-21: ‰Eƒpƒlƒ‹‚ÌF•ÏX/Á‚µƒSƒ€ƒ{ƒ^ƒ“‚Ìó‘Ô‚ğAUI‚Æ”z’uˆ—‚Å‹¤—L‚·‚éB
+extern int editorColorIndex;
+extern bool eraserMode;
+extern bool eraserAllMode;
+extern int eraserTarget;
 extern bool brushMode;
-// 2026-05-11: å½“ãŸã‚Šåˆ¤å®šã®ç·¨é›†ãƒ¢ãƒ¼ãƒ‰ã¨ãƒ‡ãƒãƒƒã‚°è¡¨ç¤ºã‚’ã‚¨ãƒ‡ã‚£ã‚¿ãƒ¼ã§åˆ‡ã‚Šæ›¿ãˆã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-07-21: ‰Eƒpƒlƒ‹‚Ì”ÍˆÍ‘I‘ğƒ{ƒ^ƒ“‚©‚çAŠù‘¶‚ÌVƒL[”ÍˆÍ‘I‘ğƒ‚[ƒh‚ğØ‚è‘Ö‚¦‚é‚½‚ß‹¤—L‚·‚éB
+extern bool selectMode;
+extern bool selecting;
+extern bool enemyPatrolEditMode;
+extern int selectedPatrolEnemyLayer;
+extern int selectedPatrolEnemyX;
+extern int selectedPatrolEnemyZ;
+// 2026-05-11: “–‚½‚è”»’è‚Ì•ÒWƒ‚[ƒh‚ÆƒfƒoƒbƒO•\¦‚ğƒGƒfƒBƒ^[‚ÅØ‚è‘Ö‚¦‚é‚½‚ß’Ç‰ÁB
 extern bool showCollisionDebug;
 extern bool collisionEditMode;
-// 2026-05-11: å½“ãŸã‚Šåˆ¤å®šç·¨é›†ã‚’ã‚»ãƒ«å˜ä½/è¾ºå˜ä½ã§åˆ‡ã‚Šæ›¿ãˆã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-05-11: “–‚½‚è”»’è•ÒW‚ğƒZƒ‹’PˆÊ/•Ó’PˆÊ‚ÅØ‚è‘Ö‚¦‚é‚½‚ß’Ç‰ÁB
 extern bool collisionEdgeEditMode;
-// 2026-05-13: ãƒ›ã‚¤ãƒ¼ãƒ«ç·¨é›†ã‚’é•·ã•ãƒ¢ãƒ¼ãƒ‰/åšã¿ãƒ¢ãƒ¼ãƒ‰ã§åˆ‡ã‚Šæ›¿ãˆã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-05-13: ƒzƒC[ƒ‹•ÒW‚ğ’·‚³ƒ‚[ƒh/Œú‚İƒ‚[ƒh‚ÅØ‚è‘Ö‚¦‚é‚½‚ß’Ç‰ÁB
 extern bool collisionDepthEditMode;
-// 2026-05-20: å³å´UIã‹ã‚‰é¸æŠä¸­ã®BOXã‚³ãƒ©ã‚¤ãƒ€ãƒ¼ã‚’èª¿æ•´ã™ã‚‹ãŸã‚å…±æœ‰ã™ã‚‹ã€‚
+// 2026-05-20: ‰E‘¤UI‚©‚ç‘I‘ğ’†‚ÌBOXƒRƒ‰ƒCƒ_[‚ğ’²®‚·‚é‚½‚ß‹¤—L‚·‚éB
 extern int selectedCollisionLayer;
 extern int selectedCollisionX;
 extern int selectedCollisionZ;
-// 2026-06-02: ã‚³ãƒ©ã‚¤ãƒ€ãƒ¼å°‚ç”¨ç”»é¢ã‹ã‚‰é€šå¸¸ç”»é¢ã¸æˆ»ã‚‹æ™‚ã«ãƒ‰ãƒ©ãƒƒã‚°çŠ¶æ…‹ã‚’ç¢ºå®Ÿã«æ­¢ã‚ã‚‹ãŸã‚è¿½åŠ ã€‚
+// 2026-06-02: ƒRƒ‰ƒCƒ_[ê—p‰æ–Ê‚©‚ç’Êí‰æ–Ê‚Ö–ß‚é‚Éƒhƒ‰ƒbƒOó‘Ô‚ğŠmÀ‚É~‚ß‚é‚½‚ß’Ç‰ÁB
 extern bool collisionBoxDragging;
 
 #pragma endregion
 
 
-#pragma region ===== é–‹å§‹åœ°ç‚¹ =====
+#pragma region ===== ŠJn’n“_ =====
 
 extern int startX;
 extern int startY;
@@ -185,7 +234,7 @@ extern int startZ;
 #pragma endregion
 
 
-#pragma region ===== ã‚´ãƒ¼ãƒ«åœ°ç‚¹ =====
+#pragma region ===== ƒS[ƒ‹’n“_ =====
 
 extern int goalX;
 extern int goalY;
@@ -194,8 +243,15 @@ extern int goalZ;
 #pragma endregion
 
 
-#pragma region ===== å…±é€šé–¢æ•° =====
+#pragma region ===== ‹¤’ÊŠÖ” =====
 
 int GetSelectedModel();
 
 #pragma endregion
+
+
+
+
+
+
+

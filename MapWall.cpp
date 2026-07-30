@@ -1,6 +1,21 @@
-Ôªø#include "MapEditor.h"
+#include "MapEditor.h"
 
-#pragma region ===== Â£Å1„Éû„Çπ2ÂÄãÈÖçÁΩÆ =====
+#pragma region ===== ï«1É}ÉX2å¬îzíu =====
+
+static void UpdateWallSlotTile(int y, int z, int x, int map[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X], int rot[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X])
+{
+    // 2026-07-15: ï«A/B/C/DÇìØÇ∂ê⁄ë±èàóùÇ≈çXêVÇ∑ÇÈÅB
+    if (map[y][z][x] < 0)
+        return;
+
+    bool left = (x > 0 && map[y][z][x - 1] >= 0);
+    bool right = (x < BLOCK_NUM_X - 1 && map[y][z][x + 1] >= 0);
+
+    if (left || right)
+        rot[y][z][x] = 1;
+    else
+        rot[y][z][x] = 0;
+}
 
 void UpdateWallTile(int y, int z, int x)
 {
@@ -8,40 +23,14 @@ void UpdateWallTile(int y, int z, int x)
     if (y < 0 || y >= BLOCK_NUM_Y) return;
     if (z < 0 || z >= BLOCK_NUM_Z) return;
 
-    // Â£ÅA
-    if (WallMapA[y][z][x] >= 0)
-    {
-        bool up = (z > 0 && WallMapA[y][z - 1][x] >= 0);
-        bool down = (z < BLOCK_NUM_Z - 1 && WallMapA[y][z + 1][x] >= 0);
-        bool left = (x > 0 && WallMapA[y][z][x - 1] >= 0);
-        bool right = (x < BLOCK_NUM_X - 1 && WallMapA[y][z][x + 1] >= 0);
-
-        if (left || right)
-            WallRotA[y][z][x] = 1;
-        else
-            WallRotA[y][z][x] = 0;
-    }
-
-    // Â£ÅB
-    if (WallMapB[y][z][x] >= 0)
-    {
-        bool up = (z > 0 && WallMapB[y][z - 1][x] >= 0);
-        bool down = (z < BLOCK_NUM_Z - 1 && WallMapB[y][z + 1][x] >= 0);
-        bool left = (x > 0 && WallMapB[y][z][x - 1] >= 0);
-        bool right = (x < BLOCK_NUM_X - 1 && WallMapB[y][z][x + 1] >= 0);
-
-        if (left || right)
-            WallRotB[y][z][x] = 1;
-        else
-            WallRotB[y][z][x] = 0;
-    }
+    UpdateWallSlotTile(y, z, x, WallMapA, WallRotA);
+    UpdateWallSlotTile(y, z, x, WallMapB, WallRotB);
 }
-
 #pragma endregion
 
 
 
-#pragma region ===== ÂÖ®Â£ÅÊõ¥Êñ∞ =====
+#pragma region ===== ëSï«çXêV =====
 
 void AutoConnectWalls()
 {
@@ -58,3 +47,4 @@ void AutoConnectWalls()
 }
 
 #pragma endregion
+

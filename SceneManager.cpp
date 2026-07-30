@@ -3,18 +3,28 @@
 
 void SceneManager::Update() {
 	if (!transition && next) {
-		current = std::move(next);
+		current = move(next);
 	}
 	if (transition) {
 		transition->Update();
 		if (transition->GetState() == TransitionState::Switching && next) {
-			current = std::move(next);
+			current = move(next);
 			transition->StartExit();
+		}
+
+		if (transition->GetState() == TransitionState::Switching && !next) {
+			transition->StartExit();
+		}
+
+		if (transition->GetState() == TransitionState::End) {
+			transition.reset();
+			return;
 		}
 
 		if (transition->IsFinished()) {
 			transition.reset();
 			current->Init();
+			return;
 		}
 		return;
 	}

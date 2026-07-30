@@ -1,238 +1,99 @@
-static void ResetCollisionBox(int layer, int z, int x)
-{
-    // 2026-05-20: 新しく置いた手動当たり判定を、セルいっぱいのBoxColliderとして初期化する。
-    if (!IsMapPosValid(layer, z, x))
-        return;
+#pragma region ===== エディター配置/当たり判定補助 =====
 
-    CollisionBoxOffsetXMap[layer][z][x] = 0;
-    CollisionBoxOffsetZMap[layer][z][x] = 0;
-    CollisionBoxSizeXMap[layer][z][x] = (int)BLOCK_SIZE;
-    CollisionBoxSizeZMap[layer][z][x] = (int)BLOCK_SIZE;
+static int editorEventIdFromModel[MODEL_MAX];
+static int editorEventModelFromEventId[MODEL_MAX];
+static int editorEnemyIdFromModel[MODEL_MAX];
+
+static vector<string> SplitCollisionCSV(const string& line)
+{
+    // 2026-05-11: CSV設定を簡単に増やせるよう、カンマ区切りを共通処理にする。
+    vector<string> cols;
+    string item;
+    stringstream ss(line);
+    while (getline(ss, item, ','))
+        cols.push_back(item);
+    return cols;
 }
-/*static void RefreshMapNameList()
+
+static bool HasCsvValue(const vector<string>& cols, int index)
 {
-    mapNameCount = 0;
+    return index >= 0 && index < (int)cols.size() && !cols[index].empty() && cols[index] != "-";
+}
+static float RotToRad(int rot)
+{
+    // 2026-07-21: 復元時、エディター描画で使う4方向回転のラジアン変換を戻す。
+    return (rot & 3) * DX_PI_F * 0.5f;
+}
 
-    WIN32_FIND_DATA fd;
+static int GetCollisionEdgeBit(int dir)
+{
+    // 2026-07-21: 復元時、辺単位の当たり判定を4bitで扱う処理を戻す。
+    return 1 << (dir & 3);
+}
 
-    HANDLE h = FindFirstFile("*.csv", &fd);
+static bool IsEditorEnemyModelId(int modelId)
+{
+    return modelId >= 0 && modelId < MODEL_MAX && tabModelCount[ENEMY] > 0;
+}
 
-    if (h == INVALID_HANDLE_VALUE)
-        return;
+static bool IsEditorUniqueStartGoalEventId(int eventId)
+{
+    return eventId == 0 || eventId == 1;
+}
 
-    do
+static void ClearEditorStartGoalCoordForEventId(int eventId)
+{
+    if (eventId == 0)
     {
-        char name[64];
-
-        strcpy_s(name, fd.cFileName);
-
-        char* dot = strstr(name, ".csv");
-
-        if (dot)
-        {
-            *dot = '\0';
-        }
-
-        strcpy_s(
-            mapNameList[mapNameCount],
-            name
-        );
-
-        mapNameCount++;
-
-    } while (FindNextFile(h, &fd));
-
-    FindClose(h);
-}*/
-static void GetCollisionBoxBounds(int layer, int z, int x, float& left, float& top, float& right, float& bottom)
-{
-    // 2026-05-20: 保存した中心オフセット/サイズから、編集表示と実当たり判定で使うBOX範囲を復元する。
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetXMap[layer][z][x];
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetZMap[layer][z][x];
-    float halfX = max(20.0f, CollisionBoxSizeXMap[layer][z][x] * 0.5f);
-    float halfZ = max(20.0f, CollisionBoxSizeZMap[layer][z][x] * 0.5f);
-
-    left = cx - halfX;
-    right = cx + halfX;
-    top = cz - halfZ;
-    bottom = cz + halfZ;
-}
-
-static int GetCollisionBoxDragMode(int layer, int z, int x, float worldX, float worldZ)
-{
-    // 2026-06-02: BOX編集を直感的にするため、角・辺・内側のつかみ判定を大きくして追加。
-    float left, top, right, bottom;
-    GetCollisionBoxBounds(layer, z, x, left, top, right, bottom);
-
-    float cornerHandle = BLOCK_SIZE * 0.16f;
-    float edgeHandle = BLOCK_SIZE * 0.12f;
-
-    bool nearLeft = fabsf(worldX - left) <= cornerHandle;
-    bool nearRight = fabsf(worldX - right) <= cornerHandle;
-    bool nearTop = fabsf(worldZ - top) <= cornerHandle;
-    bool nearBottom = fabsf(worldZ - bottom) <= cornerHandle;
-
-    if (nearLeft && nearTop) return 6;
-    if (nearRight && nearTop) return 7;
-    if (nearRight && nearBottom) return 8;
-    if (nearLeft && nearBottom) return 9;
-
-    bool insideWide = worldX >= left - edgeHandle && worldX <= right + edgeHandle && worldZ >= top - edgeHandle && worldZ <= bottom + edgeHandle;
-    if (!insideWide)
-        return 0;
-
-    if (fabsf(worldX - left) <= edgeHandle) return 1;
-    if (fabsf(worldX - right) <= edgeHandle) return 2;
-    if (fabsf(worldZ - top) <= edgeHandle) return 3;
-    if (fabsf(worldZ - bottom) <= edgeHandle) return 4;
-    if (worldX >= left && worldX <= right && worldZ >= top && worldZ <= bottom) return 5;
-
-    return 0;
-}
-
-static void ApplyCollisionBoxDrag(int layer, int z, int x, int mode, float worldX, float worldZ)
-{
-    // 2026-06-02: 角ドラッグで縦横同時リサイズ、内側ドラッグで自然に移動できるよう編集操作を拡張。
-    if (!IsMapPosValid(layer, z, x) || mode <= 0)
-        return;
-
-    const float minSize = 40.0f;
-    float left, top, right, bottom;
-    GetCollisionBoxBounds(layer, z, x, left, top, right, bottom);
-
-    if (mode == 1 || mode == 6 || mode == 9) left = min(worldX, right - minSize);
-    if (mode == 2 || mode == 7 || mode == 8) right = max(worldX, left + minSize);
-    if (mode == 3 || mode == 6 || mode == 7) top = min(worldZ, bottom - minSize);
-    if (mode == 4 || mode == 8 || mode == 9) bottom = max(worldZ, top + minSize);
-
-    if (mode == 5)
-    {
-        float halfX = (right - left) * 0.5f;
-        float halfZ = (bottom - top) * 0.5f;
-        float centerX = worldX + collisionBoxDragOffsetX;
-        float centerZ = worldZ + collisionBoxDragOffsetZ;
-        left = centerX - halfX;
-        right = centerX + halfX;
-        top = centerZ - halfZ;
-        bottom = centerZ + halfZ;
+        startX = -1;
+        startY = -1;
+        startZ = -1;
     }
-
-    float cellCenterX = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cellCenterZ = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    CollisionBoxOffsetXMap[layer][z][x] = (int)(((left + right) * 0.5f) - cellCenterX);
-    CollisionBoxOffsetZMap[layer][z][x] = (int)(((top + bottom) * 0.5f) - cellCenterZ);
-    CollisionBoxSizeXMap[layer][z][x] = (int)max(minSize, right - left);
-    CollisionBoxSizeZMap[layer][z][x] = (int)max(minSize, bottom - top);
+    else if (eventId == 1)
+    {
+        goalX = -1;
+        goalY = -1;
+        goalZ = -1;
+    }
 }
 
-static void DrawCollisionBoxHandle(float x, float y, float z, int color)
+static void ClearEditorEventId(int eventId)
 {
-    // 2026-06-02: BOXのつかめる場所を見た目で分かりやすくするため、大きめの立体ハンドルに変更。
-    float s = BLOCK_SIZE * 0.055f;
-    DrawCube3D(
-        VGet(x - s, y - s, z - s),
-        VGet(x + s, y + s, z + s),
-        color,
-        GetColor(255, 255, 255),
-        TRUE
-    );
-}
+    if (!IsEditorUniqueStartGoalEventId(eventId))
+        return;
 
-static void DrawCollisionBoxMoveHandle(float x, float y, float z, int color)
-{
-    // 2026-06-02: BOX本体をつかんで動かせることを示すため、中心ハンドルを別色で表示する。
-    DrawSphere3D(VGet(x, y, z), BLOCK_SIZE * 0.07f, 16, color, GetColor(255, 255, 255), TRUE);
-    DrawLine3D(VGet(x - BLOCK_SIZE * 0.12f, y, z), VGet(x + BLOCK_SIZE * 0.12f, y, z), color);
-    DrawLine3D(VGet(x, y, z - BLOCK_SIZE * 0.12f), VGet(x, y, z + BLOCK_SIZE * 0.12f), color);
-}
-static void DrawManualCollisionBox(int layer, int z, int x, int color)
-{
-    // 2026-05-20: 手動当たり判定を平面の×印ではなく、UnityのBoxColliderのような箱として表示する。
-    float left, top, right, bottom;
-    GetCollisionBoxBounds(layer, z, x, left, top, right, bottom);
-    float y1 = layer * BLOCK_SIZE + 5.0f;
-    float y2 = layer * BLOCK_SIZE + 150.0f;
-
-    DrawLine3D(VGet(left, y1, top), VGet(right, y1, top), color);
-    DrawLine3D(VGet(right, y1, top), VGet(right, y1, bottom), color);
-    DrawLine3D(VGet(right, y1, bottom), VGet(left, y1, bottom), color);
-    DrawLine3D(VGet(left, y1, bottom), VGet(left, y1, top), color);
-    DrawLine3D(VGet(left, y2, top), VGet(right, y2, top), color);
-    DrawLine3D(VGet(right, y2, top), VGet(right, y2, bottom), color);
-    DrawLine3D(VGet(right, y2, bottom), VGet(left, y2, bottom), color);
-    DrawLine3D(VGet(left, y2, bottom), VGet(left, y2, top), color);
-    DrawLine3D(VGet(left, y1, top), VGet(left, y2, top), color);
-    DrawLine3D(VGet(right, y1, top), VGet(right, y2, top), color);
-    DrawLine3D(VGet(right, y1, bottom), VGet(right, y2, bottom), color);
-    DrawLine3D(VGet(left, y1, bottom), VGet(left, y2, bottom), color);
-
-    float hy = y2 + 10.0f;
-    int handleColor = GetColor(255, 255, 80);
-    DrawCollisionBoxHandle(left, hy, (top + bottom) * 0.5f, handleColor);
-    DrawCollisionBoxHandle(right, hy, (top + bottom) * 0.5f, handleColor);
-    DrawCollisionBoxHandle((left + right) * 0.5f, hy, top, handleColor);
-    DrawCollisionBoxHandle((left + right) * 0.5f, hy, bottom, handleColor);
-    DrawCollisionBoxHandle(left, hy, top, handleColor);
-    DrawCollisionBoxHandle(right, hy, top, handleColor);
-    DrawCollisionBoxHandle(right, hy, bottom, handleColor);
-    DrawCollisionBoxHandle(left, hy, bottom, handleColor);
-    DrawCollisionBoxMoveHandle((left + right) * 0.5f, hy + 16.0f, (top + bottom) * 0.5f, GetColor(80, 255, 120));
-}
-#pragma region ===== イベント配置 =====
-
-static void ClearEventId(int eventId)
-{
     for (int y = 0; y < BLOCK_NUM_Y; y++)
     {
-        for (int z = 0; z < BLOCK_NUM_Z; z++)
+        for (int zz = 0; zz < BLOCK_NUM_Z; zz++)
         {
-            for (int x = 0; x < BLOCK_NUM_X; x++)
+            for (int xx = 0; xx < BLOCK_NUM_X; xx++)
             {
-                if (EventMap[y][z][x] == eventId)
+                if (EventMap[y][zz][xx] == eventId)
                 {
-                    EventMap[y][z][x] = -1;
+                    EventMap[y][zz][xx] = -1;
+                    EventRot[y][zz][xx] = 0;
                 }
             }
         }
     }
+
+    ClearEditorStartGoalCoordForEventId(eventId);
 }
 
-/*
-static bool IsEditorEnemyModelId(int modelId)
+static void PlaceEventWithRot(int layer, int z, int x, int eventId, int rot)
 {
-    return modelId == 6;
-}
-
-static int GetEditorEnemyIdFromModel(int modelId)
-{
-    if (modelId == 6)
-        return GAME_ENEMY_THROW;
-
-    return -1;
-}
-
-static bool IsLegacyEnemyEventId(int eventId)
-{
-    return eventId == 6;
-}
-
-static int NormalizeEditorEnemyId(int enemyId)
-{
-    return IsLegacyEnemyEventId(enemyId) ? GAME_ENEMY_THROW : enemyId;
-}
-*/
-static void PlaceEvent(int layer, int z, int x, int eventId)
-{
-    if (!IsMapPosValid(layer, z, x))
+    // 2026-07-22: START/GOAL are unique editor markers, so placing or pasting one moves the old marker.
+    if (layer < 0 || layer >= BLOCK_NUM_Y || z < 0 || z >= BLOCK_NUM_Z || x < 0 || x >= BLOCK_NUM_X)
         return;
 
-    // スタートとゴールのみ1個に制限
-    if (eventId == 0 || eventId == 1)
-    {
-        ClearEventId(eventId);
-    }
+    if (IsEditorUniqueStartGoalEventId(EventMap[layer][z][x]))
+        ClearEditorStartGoalCoordForEventId(EventMap[layer][z][x]);
+
+    if (IsEditorUniqueStartGoalEventId(eventId))
+        ClearEditorEventId(eventId);
 
     EventMap[layer][z][x] = eventId;
+    EventRot[layer][z][x] = IsEditorUniqueStartGoalEventId(eventId) ? 0 : (rot & 3);
 
     if (eventId == 0)
     {
@@ -248,13 +109,149 @@ static void PlaceEvent(int layer, int z, int x, int eventId)
     }
 }
 
-#pragma endregion
-
-#pragma region ===== 座標・回転 =====
-
-static float RotToRad(int rot)
+static void PlaceEvent(int layer, int z, int x, int eventId)
 {
-    return rot * 3.14159265f * 0.5f;
+    // 2026-07-21: EVENTタブ配置時に、CSVのplaceIdへ変換したイベントIDを保存する。
+    // 2026-07-21: 扉などのEVENTモデルをRキーで回転して置けるよう、配置時の向きを保存する。
+    PlaceEventWithRot(layer, z, x, eventId, currentRot);
+}
+
+static int GetCollisionBoxDragMode(int layer, int z, int x, float worldX, float worldZ)
+{
+    // 2026-07-21: 復元時、BoxCollider風編集のつかむ場所判定を戻す。
+    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetXMap[layer][z][x];
+    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetZMap[layer][z][x];
+    float hw = CollisionBoxSizeXMap[layer][z][x] * 0.5f;
+    float hd = CollisionBoxSizeZMap[layer][z][x] * 0.5f;
+    float grab = 35.0f;
+
+    if (fabsf(worldX - (cx - hw)) < grab) return 1;
+    if (fabsf(worldX - (cx + hw)) < grab) return 2;
+    if (fabsf(worldZ - (cz - hd)) < grab) return 3;
+    if (fabsf(worldZ - (cz + hd)) < grab) return 4;
+    return 5;
+}
+
+static void ApplyCollisionBoxDrag(int layer, int z, int x, int mode, float worldX, float worldZ)
+{
+    // 2026-07-21: 復元時、BOXの中心移動と各辺サイズ調整を戻す。
+    if (layer < 0 || layer >= BLOCK_NUM_Y || z < 0 || z >= BLOCK_NUM_Z || x < 0 || x >= BLOCK_NUM_X)
+        return;
+
+    float baseX = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float baseZ = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    int minSize = 40;
+    int maxSize = (int)BLOCK_SIZE;
+
+    if (mode == 5)
+    {
+        CollisionBoxOffsetXMap[layer][z][x] = (int)(worldX - baseX);
+        CollisionBoxOffsetZMap[layer][z][x] = (int)(worldZ - baseZ);
+        return;
+    }
+
+    float cx = baseX + CollisionBoxOffsetXMap[layer][z][x];
+    float cz = baseZ + CollisionBoxOffsetZMap[layer][z][x];
+    if (mode == 1 || mode == 2)
+    {
+        int newSize = (int)(fabsf(worldX - cx) * 2.0f);
+        CollisionBoxSizeXMap[layer][z][x] = max(minSize, min(maxSize, newSize));
+    }
+    else if (mode == 3 || mode == 4)
+    {
+        int newSize = (int)(fabsf(worldZ - cz) * 2.0f);
+        CollisionBoxSizeZMap[layer][z][x] = max(minSize, min(maxSize, newSize));
+    }
+}
+
+static void DrawManualCollisionBox(int layer, int z, int x, int color)
+{
+    // 2026-07-21: 復元時、手動BOX当たり判定を3D線で確認できる表示を戻す。
+    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetXMap[layer][z][x];
+    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetZMap[layer][z][x];
+    float yy = layer * BLOCK_SIZE + 26.0f;
+    float hw = CollisionBoxSizeXMap[layer][z][x] * 0.5f;
+    float hd = CollisionBoxSizeZMap[layer][z][x] * 0.5f;
+
+    DrawLine3D(VGet(cx - hw, yy, cz - hd), VGet(cx + hw, yy, cz - hd), color);
+    DrawLine3D(VGet(cx + hw, yy, cz - hd), VGet(cx + hw, yy, cz + hd), color);
+    DrawLine3D(VGet(cx + hw, yy, cz + hd), VGet(cx - hw, yy, cz + hd), color);
+    DrawLine3D(VGet(cx - hw, yy, cz + hd), VGet(cx - hw, yy, cz - hd), color);
+}
+static int ParseModelTab(const string& text)
+{
+    // 2026-05-20: model_config.csv のタブ名から、エディターの配置タブへ変換するため追加。
+    if (text == "FLOOR") return FLOOR;
+    if (text == "WALL") return WALL;
+    if (text == "CORNER") return CORNER;
+    if (text == "DECO") return DECO;
+    if (text == "ENEMY") return ENEMY;
+    if (text == "EVENT") return EVENT;
+    return -1;
+}
+
+static EditorCollisionType ParseEditorCollisionType(const string& text)
+{
+    // 2026-05-11: collision_config.csv の文字列から当たり判定タイプを選べるよう追加。
+    if (text == "CIRCLE") return EDITOR_COLL_CIRCLE;
+    if (text == "BOX") return EDITOR_COLL_BOX;
+    if (text == "ARC") return EDITOR_COLL_ARC;
+    if (text == "WALL") return EDITOR_COLL_WALL;
+    if (text == "STAIRS") return EDITOR_COLL_STAIRS;
+    return EDITOR_COLL_NONE;
+}
+
+static void ResetEditorPlacementModelMaps()
+{
+    // 2026-07-06: EVENT/ENEMYの配置IDをmodel_config.csvから引けるよう、読み込み前に対応表を初期化する。
+    for (int i = 0; i < MODEL_MAX; i++)
+    {
+        editorEventIdFromModel[i] = i;
+        editorEventModelFromEventId[i] = -1;
+        editorEnemyIdFromModel[i] = 0;
+    }
+}
+
+static bool IsEditorPlacementDisabled(int tab, int id)
+{
+    // 2026-07-21: 復元時、モデル登録をタブ一覧へ出すか判断する入口を戻す。
+    // 2026-07-21: はしごID30は上昇ヒント専用モデルなので、エディターの配置パレットには出さない。
+    return id == 30;
+}
+
+static void AddModelToEditorTab(int tab, int id)
+{
+    if (tab < 0 || tab >= TAB_MAX || id < 0 || id >= MODEL_MAX)
+        return;
+    if (tabModelCount[tab] >= 16)
+        return;
+
+    for (int i = 0; i < tabModelCount[tab]; i++)
+        if (tabModelList[tab][i] == id)
+            return;
+
+    tabModelList[tab][tabModelCount[tab]++] = id;
+}
+
+static int GetEditorEventIdFromModel(int modelId)
+{
+    if (modelId < 0 || modelId >= MODEL_MAX)
+        return 0;
+    return editorEventIdFromModel[modelId];
+}
+
+static int GetEditorModelIdFromEventId(int eventId)
+{
+    if (eventId < 0 || eventId >= MODEL_MAX)
+        return -1;
+    return editorEventModelFromEventId[eventId];
+}
+
+static int GetEditorEnemyIdFromModel(int modelId)
+{
+    if (modelId < 0 || modelId >= MODEL_MAX)
+        return 0;
+    return editorEnemyIdFromModel[modelId];
 }
 
 static bool IsEditorStairsId(int id)
@@ -264,20 +261,23 @@ static bool IsEditorStairsId(int id)
 
 static int GetEditorStairsDrawRot(int rot)
 {
-    // 2026-05-19: ゲーム側と同じく、階段モデルだけ見た目の向きを180度反転して表示する。
-    return (rot + 2) % 4;
+    return rot & 3;
 }
 
 static int GetEditorModelDrawRot(int tab, int id, int rot)
 {
-    // 2026-06-29: 壁モデルID 1/3は横向きの時だけ外側を向くため、回転1/3だけ補正する。
-    if (tab == WALL && (id == 1 || id == 3) && (rot & 1))
+    // 2026-07-22: モデル31/34はいったん外したため、追加壁33だけ壁辺に沿うよう90度分だけ補正する。
+    if (tab == WALL && id == 33)
+        return (rot + 1) & 3;
+    // 2026-06-29: 壁は配置した辺に対してモデルだけ内側を向くよう補正する。
+    if (tab == WALL)
         return (rot + 2) & 3;
-
+    // 2026-07-22: モデル28はいったん外したため、角モデル29だけ描画時の回転補正を残す。
+    if (tab == CORNER && id == 29)
+        return (rot + 1) & 3;
     if (tab == DECO && IsEditorStairsId(id))
         return GetEditorStairsDrawRot(rot);
-
-    return rot;
+    return rot & 3;
 }
 
 static VECTOR GetBlockCenterPosition(int x, int y, int z)
@@ -294,9 +294,8 @@ static VECTOR GetWallPosition(int x, int y, int z, int rot)
     float px = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
     float py = y * BLOCK_SIZE;
     float pz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    // 2026-06-29: 壁は選択したセルの辺に置き、内向きになる見た目は描画回転で補正する。
 
-    switch (rot % 4)
+    switch (rot & 3)
     {
     case 0: pz = z * BLOCK_SIZE; break;
     case 1: px = (x + 1) * BLOCK_SIZE; break;
@@ -307,75 +306,45 @@ static VECTOR GetWallPosition(int x, int y, int z, int rot)
     return VGet(px, py, pz);
 }
 
+static VECTOR ApplyEditorModelConfigOffset(int tab, int id, VECTOR pos)
+{
+    // 2026-07-21: model_config.csvのoffsetX/offsetZ/offsetYで、モデル原点のズレを見ながら調整できるようにする。
+    if (id >= 0 && id < MODEL_MAX)
+    {
+        pos.x += modelOffsetX[id];
+        pos.z += modelOffsetZ[id];
+        pos.y += modelOffsetY[id];
+    }
+    return pos;
+}
+
+static VECTOR ApplyEditorWallModelAlignmentOffset(int tab, int id, int rot, VECTOR pos)
+{
+    // 2026-07-22: モデル34はいったん外したため、追加壁の個別位置補正は使わない。
+    return pos;
+}
+
 static VECTOR GetModelDrawPosition(int tab, int x, int y, int z, int rot)
 {
     if (tab == WALL)
         return GetWallPosition(x, y, z, rot);
-
-    VECTOR pos = GetBlockCenterPosition(x, y, z);
-
-    // 階段だけ位置補正
-   /* if (tab == DECO && DecoMap[y][z][x] == 5)
-    {
-        float offset = BLOCK_SIZE * -0.25f;
-
-        switch (rot % 4)
-        {
-        case 0:
-            pos.z += offset;
-            break;
-
-        case 1:
-            pos.x += offset;
-            break;
-
-        case 2:
-            pos.z -= offset;
-            break;
-
-        case 3:
-            pos.x -= offset;
-            break;
-        }
-    }*/
-
-    return pos;
+    return GetBlockCenterPosition(x, y, z);
 }
 
-#pragma endregion
-
-
-#pragma region ===== 当たり判定設定 =====
-
-static vector<string> SplitCollisionCSV(const string& line)
+static void ResetCollisionBox(int layer, int z, int x)
 {
-    // 2026-05-11: 新しいオブジェクトを追加した時に、CSVで既定当たり判定を増やせるよう追加。
-    vector<string> result;
-    string item;
-    stringstream ss(line);
-
-    while (getline(ss, item, ','))
-    {
-        result.push_back(item);
-    }
-
-    return result;
-}
-
-static EditorCollisionType ParseEditorCollisionType(const string& text)
-{
-    // 2026-05-11: collision_config.csv の文字列から当たり判定タイプを選べるよう追加。
-    if (text == "CIRCLE") return EDITOR_COLL_CIRCLE;
-    if (text == "BOX") return EDITOR_COLL_BOX;
-    if (text == "ARC") return EDITOR_COLL_ARC;
-    if (text == "WALL") return EDITOR_COLL_WALL;
-    if (text == "STAIRS") return EDITOR_COLL_STAIRS;
-    return EDITOR_COLL_NONE;
+    // 2026-05-20: BoxCollider風編集値を標準サイズへ戻す。
+    if (layer < 0 || layer >= BLOCK_NUM_Y || z < 0 || z >= BLOCK_NUM_Z || x < 0 || x >= BLOCK_NUM_X)
+        return;
+    CollisionBoxOffsetXMap[layer][z][x] = 0;
+    CollisionBoxOffsetZMap[layer][z][x] = 0;
+    CollisionBoxSizeXMap[layer][z][x] = 200;
+    CollisionBoxSizeZMap[layer][z][x] = 200;
 }
 
 static void InitEditorCollisionTable()
 {
-    // 2026-05-11: Loader側の既定当たり判定をエディターでも見えるようにするため追加。
+    // 2026-05-11: 既定当たり判定をコード初期値とCSVで設定する。
     for (int i = 0; i < MODEL_MAX; i++)
     {
         editorCollisionTable[i].type = EDITOR_COLL_NONE;
@@ -385,17 +354,12 @@ static void InitEditorCollisionTable()
     }
 
     editorCollisionTable[1].type = EDITOR_COLL_WALL;
-
     editorCollisionTable[2].type = EDITOR_COLL_CIRCLE;
     editorCollisionTable[2].radius = BLOCK_SIZE * 0.3f;
-
     editorCollisionTable[5].type = EDITOR_COLL_STAIRS;
-
     editorCollisionTable[6].type = EDITOR_COLL_BOX;
     editorCollisionTable[6].width = BLOCK_SIZE * 0.35f;
     editorCollisionTable[6].depth = BLOCK_SIZE * 0.35f;
-
-    editorCollisionTable[7].type = EDITOR_COLL_NONE;
 
     ifstream ifs("collision_config.csv");
     if (!ifs)
@@ -422,31 +386,6 @@ static void InitEditorCollisionTable()
     }
 }
 
-#pragma endregion
-static int ParseModelTab(const string& text)
-{
-    // 2026-05-20: model_config.csv のタブ名から、エディターの配置タブへ変換するため追加。
-    if (text == "FLOOR") return FLOOR;
-    if (text == "WALL") return WALL;
-    if (text == "CORNER") return CORNER;
-    if (text == "DECO") return DECO;
-    if (text == "ENEMY") return ENEMY;
-    if (text == "EVENT") return EVENT;
-    return -1;
-}
-
-static void AddModelToEditorTab(int tab, int id)
-{
-    if (tab < 0 || tab >= TAB_MAX)
-        return;
-
-    if (tabModelCount[tab] >= 16)
-        return;
-
-    tabModelList[tab][tabModelCount[tab]] = id;
-    tabModelCount[tab]++;
-}
-
 static void LoadEditorModelConfig()
 {
     // 2026-05-20: 今後モデルを増やしやすくするため、エディターのモデル一覧をCSVから読み込む。
@@ -454,10 +393,9 @@ static void LoadEditorModelConfig()
     {
         tabModelCount[tab] = 0;
         for (int i = 0; i < 16; i++)
-        {
             tabModelList[tab][i] = 0;
-        }
     }
+    ResetEditorPlacementModelMaps();
 
     ifstream ifs("model_config.csv");
     if (!ifs)
@@ -483,334 +421,171 @@ static void LoadEditorModelConfig()
 
         string modelPath = cols[2];
         string palettePath = cols.size() >= 4 ? cols[3] : "-";
-        float scaleX = cols.size() >= 5 ? stof(cols[4]) : 1.0f;
-        float scaleY = cols.size() >= 6 ? stof(cols[5]) : scaleX;
-        float scaleZ = cols.size() >= 7 ? stof(cols[6]) : scaleX;
+        float scaleX = HasCsvValue(cols, 4) ? stof(cols[4]) : 1.0f;
+        float scaleY = HasCsvValue(cols, 5) ? stof(cols[5]) : scaleX;
+        float scaleZ = HasCsvValue(cols, 6) ? stof(cols[6]) : scaleX;
+        int placeId = HasCsvValue(cols, 7) ? stoi(cols[7]) : id;
+
+        if (tab == EVENT)
+        {
+            placeId = HasCsvValue(cols, 7) ? stoi(cols[7]) : id;
+        }
+        else
+        {
+            // 2026-07-21: EVENT以外の8/9/10列目は、モデル表示位置の微調整値として使う。
+            modelOffsetX[id] = HasCsvValue(cols, 7) ? stof(cols[7]) : 0.0f;
+            modelOffsetZ[id] = HasCsvValue(cols, 8) ? stof(cols[8]) : 0.0f;
+            modelOffsetY[id] = HasCsvValue(cols, 9) ? stof(cols[9]) : 0.0f;
+        }
 
         if (modelPath != "-" && modelHandles[id] == -1)
         {
             modelHandles[id] = MV1LoadModel(modelPath.c_str());
             if (modelHandles[id] != -1)
-            {
                 MV1SetScale(modelHandles[id], VGet(scaleX, scaleY, scaleZ));
-            }
         }
 
         if (palettePath != "-" && paletteTex[id] == -1)
-        {
             paletteTex[id] = LoadGraph(palettePath.c_str());
+
+        if (tab == EVENT && placeId >= 0 && placeId < MODEL_MAX)
+        {
+            editorEventIdFromModel[id] = placeId;
+            editorEventModelFromEventId[placeId] = id;
+        }
+        else if (tab == ENEMY)
+        {
+            editorEnemyIdFromModel[id] = HasCsvValue(cols, 7) ? placeId : 0;
         }
 
-        AddModelToEditorTab(tab, id);
+        if (!IsEditorPlacementDisabled(tab, id))
+            AddModelToEditorTab(tab, id);
     }
 }
 
-#pragma region ===== 当たり判定表示補助 =====
+static void DrawCollisionEdgeLine(int x, int y, int z, int rot, int scale, int thickness, int color);
 
-static int GetCollisionEdgeBit(int edge)
+static bool IsEditorCornerWallPairId(int id)
 {
-    // 2026-05-11: 1セルに複数の辺当たり判定を持たせるため、方向をビットに変換する処理を追加。
-    return 1 << (edge % 4);
+    // 2026-07-22: モデル28はいったん外したため、角モデル29だけ直角に交わる壁2枚として当たり判定を扱う。
+    return id == 29;
 }
 
-static void GetCollisionEdgeLine(int x, int z, int edge, int scale, float& x1, float& z1, float& x2, float& z2)
+static int GetEditorCornerWallPairCollisionRot(int id, int rot)
 {
-    // 2026-05-11: MapLoader.cppの壁ライン判定と同じ位置を、伸縮値込みでエディター可視化するため追加。
+    // 2026-07-22: モデル28はいったん外したため、角モデル29の見た目に合わせた当たり判定補正だけ残す。
+    int baseRot = rot & 3;
+    int collisionRot = (baseRot + 1) & 3;
+
+    // 2026-07-21: モデル29の当たり判定全体が1方向ずれていたため、全回転をさらに-1方向へ調整する。
+    collisionRot = (collisionRot + 3) & 3;
+
+    // 2026-07-21: モデル29だけ回転が2個分ずれていたため、29の当たり判定だけ180度補正する。
+    collisionRot = (collisionRot + 2) & 3;
+
+    return collisionRot;
+}
+
+static bool IsEditorCornerWallPairEdge(int rot, int edge)
+{
+    // 2026-07-21: 元のGetCornerArcDataと同じ回転対応にし、0=下左/1=下右/2=上右/3=上左の2辺へ合わせる。
+    int r = rot & 3;
+    int e = edge & 3;
+    switch (r)
+    {
+    case 0: return e == 2 || e == 3;
+    case 1: return e == 2 || e == 1;
+    case 2: return e == 0 || e == 1;
+    default: return e == 0 || e == 3;
+    }
+}
+
+static void DrawCornerWallPairCollision(int x, int y, int z, int rot, int color)
+{
+    // 2026-07-21: エディターのプレビューでも、モデル28はいったん外したため、モデル29が壁2枚分の判定だと分かるよう2辺を表示する。
+    for (int edge = 0; edge < 4; edge++)
+    {
+        if (IsEditorCornerWallPairEdge(rot, edge))
+            DrawCollisionEdgeLine(x, y, z, edge, 100, 100, color);
+    }
+}
+static void DrawCollisionEdgeLine(int x, int y, int z, int rot, int scale, int thickness, int color)
+{
     float left = x * BLOCK_SIZE;
     float right = (x + 1) * BLOCK_SIZE;
-    float top = z * BLOCK_SIZE;
-    float bottom = (z + 1) * BLOCK_SIZE;
+    float front = z * BLOCK_SIZE;
+    float back = (z + 1) * BLOCK_SIZE;
+    float yy = y * BLOCK_SIZE + 18.0f;
+    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float lenRate = scale / 100.0f;
 
-    switch (edge % 4)
+    VECTOR a = VGet(cx, yy, cz);
+    VECTOR b = VGet(cx, yy, cz);
+    switch (rot & 3)
     {
     case 0:
-        x1 = left + BLOCK_SIZE * 0.0f;
-        z1 = top;
-        x2 = right - BLOCK_SIZE * 0.0f;
-        z2 = top;
+        a = VGet(cx - BLOCK_SIZE * 0.5f * lenRate, yy, front);
+        b = VGet(cx + BLOCK_SIZE * 0.5f * lenRate, yy, front);
         break;
-
     case 1:
-        x1 = right;
-        z1 = top + BLOCK_SIZE * 0.00f;
-        x2 = right;
-        z2 = bottom - BLOCK_SIZE * 0.00f;
+        a = VGet(right, yy, cz - BLOCK_SIZE * 0.5f * lenRate);
+        b = VGet(right, yy, cz + BLOCK_SIZE * 0.5f * lenRate);
         break;
-
     case 2:
-        x1 = left + BLOCK_SIZE * 0.0f;
-        z1 = bottom;
-        x2 = right - BLOCK_SIZE * 0.0f;
-        z2 = bottom;
+        a = VGet(cx - BLOCK_SIZE * 0.5f * lenRate, yy, back);
+        b = VGet(cx + BLOCK_SIZE * 0.5f * lenRate, yy, back);
         break;
-
     case 3:
-        x1 = left;
-        z1 = top + BLOCK_SIZE * 0.0f;
-        x2 = left;
-        z2 = bottom - BLOCK_SIZE * 0.0f;
+        a = VGet(left, yy, cz - BLOCK_SIZE * 0.5f * lenRate);
+        b = VGet(left, yy, cz + BLOCK_SIZE * 0.5f * lenRate);
         break;
     }
-
-    float centerX = (x1 + x2) * 0.5f;
-    float centerZ = (z1 + z2) * 0.5f;
-    float rate = scale / 100.0f;
-
-    x1 = centerX + (x1 - centerX) * rate;
-    z1 = centerZ + (z1 - centerZ) * rate;
-    x2 = centerX + (x2 - centerX) * rate;
-    z2 = centerZ + (z2 - centerZ) * rate;
+    DrawLine3D(a, b, color);
 }
 
-static void DrawCollisionEdgeLine(int x, int y, int z, int edge, int scale, int thickness, int color)
+static void DrawCollisionBox(int x, int y, int z, float width, float depth, int color)
 {
-    // 2026-05-11: 壁モデル由来/手動設定由来の辺当たり判定を線で確認するため追加。
-    float x1 = 0.0f;
-    float z1 = 0.0f;
-    float x2 = 0.0f;
-    float z2 = 0.0f;
-    float yy = y * BLOCK_SIZE + 70.0f;
-
-    GetCollisionEdgeLine(x, z, edge, scale, x1, z1, x2, z2);
-    DrawLine3D(VGet(x1, yy, z1), VGet(x2, yy, z2), color);
-    DrawLine3D(VGet(x1, yy + 8.0f, z1), VGet(x2, yy + 8.0f, z2), color);
-
-    // 2026-05-11: 辺当たり判定の厚さを、線に直交する短い目印として見えるよう追加。
-    float dx = x2 - x1;
-    float dz = z2 - z1;
-    float len = sqrtf(dx * dx + dz * dz);
-    if (len > 0.0001f)
-    {
-        float nx = -dz / len;
-        float nz = dx / len;
-        float half = BLOCK_SIZE * 0.08f * (thickness / 100.0f);
-        float cx = (x1 + x2) * 0.5f;
-        float cz = (z1 + z2) * 0.5f;
-        DrawLine3D(VGet(cx - nx * half, yy + 16.0f, cz - nz * half), VGet(cx + nx * half, yy + 16.0f, cz + nz * half), color);
-    }
+    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float yy = y * BLOCK_SIZE + 20.0f;
+    float hw = width * 0.5f;
+    float hd = depth * 0.5f;
+    DrawLine3D(VGet(cx - hw, yy, cz - hd), VGet(cx + hw, yy, cz - hd), color);
+    DrawLine3D(VGet(cx + hw, yy, cz - hd), VGet(cx + hw, yy, cz + hd), color);
+    DrawLine3D(VGet(cx + hw, yy, cz + hd), VGet(cx - hw, yy, cz + hd), color);
+    DrawLine3D(VGet(cx - hw, yy, cz + hd), VGet(cx - hw, yy, cz - hd), color);
 }
 
 static void DrawCollisionCircle(int x, int y, int z, float radius, int color)
 {
-    // 2026-05-11: 円形の既定当たり判定を、オブジェクトを置いた時点で直接見えるよう追加。
-    const int DIV = 32;
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float yy = y * BLOCK_SIZE + 72.0f;
-
-    for (int i = 0; i < DIV; i++)
-    {
-        float a1 = DX_PI_F * 2.0f * i / DIV;
-        float a2 = DX_PI_F * 2.0f * (i + 1) / DIV;
-        DrawLine3D(
-            VGet(cx + cosf(a1) * radius, yy, cz + sinf(a1) * radius),
-            VGet(cx + cosf(a2) * radius, yy, cz + sinf(a2) * radius),
-            color);
-    }
-}
-
-static void DrawCollisionCircleAt(float cx, float yy, float cz, float radius, int color)
-{
-    // 装飾7は中央ではなく四隅に小さい柱判定を置くので、任意位置に円を描ける補助を使う。
-    const int DIV = 32;
-
-    for (int i = 0; i < DIV; i++)
-    {
-        float a1 = DX_PI_F * 2.0f * i / DIV;
-        float a2 = DX_PI_F * 2.0f * (i + 1) / DIV;
-        DrawLine3D(
-            VGet(cx + cosf(a1) * radius, yy, cz + sinf(a1) * radius),
-            VGet(cx + cosf(a2) * radius, yy, cz + sinf(a2) * radius),
-            color);
-    }
-}
-
-static void DrawCollisionBox(int x, int y, int z, float halfW, float halfD, int color)
-{
-    // 2026-05-11: 箱形の既定当たり判定を、オブジェクトを置いた時点で直接見えるよう追加。
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float yy = y * BLOCK_SIZE + 72.0f;
-
-    float left = cx - halfW;
-    float right = cx + halfW;
-    float top = cz - halfD;
-    float bottom = cz + halfD;
-
-    DrawLine3D(VGet(left, yy, top), VGet(right, yy, top), color);
-    DrawLine3D(VGet(right, yy, top), VGet(right, yy, bottom), color);
-    DrawLine3D(VGet(right, yy, bottom), VGet(left, yy, bottom), color);
-    DrawLine3D(VGet(left, yy, bottom), VGet(left, yy, top), color);
-}
-
-static void GetCornerArcData(int x, int z, int rot, float radius, float& cx, float& cz, float& start, float& end)
-{
-    // 2026-05-20: 画像のようなコーナー用90度円弧を、rotごとにセル角へ合わせて配置する。
-    // 2026-05-20: モデルのカーブより左下へズレたため、内側補正を外してセル角を中心にする。
-    float left = x * BLOCK_SIZE;
-    float right = (x + 1) * BLOCK_SIZE;
-    float top = z * BLOCK_SIZE;
-    float bottom = (z + 1) * BLOCK_SIZE;
-
-    // 2026-05-20: 回転2を正解にして、逆だった回転1と回転3だけを入れ替える。
-    switch (rot % 4)
-    {
-    case 0: cx = left; cz = bottom; start = DX_PI_F * 1.5f; end = DX_PI_F * 2.0f; break;
-    case 1: cx = right; cz = bottom; start = DX_PI_F; end = DX_PI_F * 1.5f; break;
-    case 2: cx = right; cz = top; start = DX_PI_F * 0.5f; end = DX_PI_F; break;
-    default: cx = left; cz = top; start = 0.0f; end = DX_PI_F * 0.5f; break;
-    }
+    VECTOR center = VGet(x * BLOCK_SIZE + BLOCK_SIZE * 0.5f, y * BLOCK_SIZE + 20.0f, z * BLOCK_SIZE + BLOCK_SIZE * 0.5f);
+    DrawSphere3D(center, max(8.0f, radius * 0.08f), 8, color, GetColor(255, 255, 255), TRUE);
 }
 
 static void DrawCollisionArc(int x, int y, int z, int rot, float radius, float thickness, int color)
 {
-    // 2026-05-20: 半円ではなくコーナーの向きに合う90度円弧コライダーとして表示する。
-    const int DIV = 24;
-    float cx, cz, start, end;
-    GetCornerArcData(x, z, rot, radius, cx, cz, start, end);
-    float yy = y * BLOCK_SIZE + 82.0f;
-    float inner = max(10.0f, radius - thickness);
-    float outer = radius + thickness;
-
-    for (int i = 0; i < DIV; i++)
-    {
-        float a1 = start + (end - start) * i / DIV;
-        float a2 = start + (end - start) * (i + 1) / DIV;
-
-        // 2026-05-20: 円弧コライダーに厚みがあることを分かるよう、内側線・中心線・外側線で表示する。
-        DrawLine3D(VGet(cx + cosf(a1) * inner, yy, cz + sinf(a1) * inner), VGet(cx + cosf(a2) * inner, yy, cz + sinf(a2) * inner), color);
-        DrawLine3D(VGet(cx + cosf(a1) * radius, yy + 8.0f, cz + sinf(a1) * radius), VGet(cx + cosf(a2) * radius, yy + 8.0f, cz + sinf(a2) * radius), color);
-        DrawLine3D(VGet(cx + cosf(a1) * outer, yy, cz + sinf(a1) * outer), VGet(cx + cosf(a2) * outer, yy, cz + sinf(a2) * outer), color);
-    }
-
-    DrawLine3D(VGet(cx + cosf(start) * inner, yy + 16.0f, cz + sinf(start) * inner), VGet(cx + cosf(start) * outer, yy + 16.0f, cz + sinf(start) * outer), color);
-    DrawLine3D(VGet(cx + cosf(end) * inner, yy + 16.0f, cz + sinf(end) * inner), VGet(cx + cosf(end) * outer, yy + 16.0f, cz + sinf(end) * outer), color);
+    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float yy = y * BLOCK_SIZE + 24.0f;
+    DrawLine3D(VGet(cx - radius * 0.5f, yy, cz), VGet(cx + radius * 0.5f, yy, cz), color);
+    DrawLine3D(VGet(cx, yy, cz - radius * 0.5f), VGet(cx, yy, cz + radius * 0.5f), color);
 }
-static void DrawCollisionCornerLine(
-    int x,
-    int y,
-    int z,
-    int rot,
-    int scale,
-    int thickness,
-    int offset,
-    int color)
+
+static void DrawCollisionCornerLine(int x, int y, int z, int rot, int scale, int thickness, int offset, int color)
 {
-    //2026-5-25 半円コーナー当たり判定
-
-    const int DIV = 32;
-
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * -0.5f;
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * -0.5f;
-
-    float yy = y * BLOCK_SIZE + 74.0f;
-
-    // 半径
-    float radius = BLOCK_SIZE * 0.5f * (scale / 100.0f);
-
-    // offsetで前後移動
-    float dirX = 0.0f;
-    float dirZ = 0.0f;
-
-    float startAngle = 0.0f;
-    float endAngle = DX_PI_F;
-
-    switch (rot % 4)
-    {
-    case 0:
-        // 上向き
-        startAngle = DX_PI_F;
-        endAngle = DX_PI_F * 2.0f;
-        dirZ = -1.0f;
-        break;
-
-    case 1:
-        // 右向き
-        startAngle = -DX_PI_F * 0.5f;
-        endAngle = DX_PI_F * 0.5f;
-        dirX = 1.0f;
-        break;
-
-    case 2:
-        // 下向き
-        startAngle = 0.0f;
-        endAngle = DX_PI_F;
-        dirZ = 1.0f;
-        break;
-
-    case 3:
-        // 左向き
-
-        startAngle = DX_PI_F * 0.5f;
-        endAngle = DX_PI_F * 1.5f;
-        dirX = -1.0f;
-        break;
-    }
-
-    cx += dirX * offset;
-    cz += dirZ * offset;
-
-    // 半円描画
-    for (int i = 0; i < DIV; i++)
-    {
-        float t1 = (float)i / DIV;
-        float t2 = (float)(i + 1) / DIV;
-
-        float a1 = startAngle + (endAngle - startAngle) * t1;
-        float a2 = startAngle + (endAngle - startAngle) * t2;
-
-        float x1 = cx + cosf(a1) * radius;
-        float z1 = cz + sinf(a1) * radius;
-
-        float x2 = cx + cosf(a2) * radius;
-        float z2 = cz + sinf(a2) * radius;
-
-        DrawLine3D(
-            VGet(x1, yy, z1),
-            VGet(x2, yy, z2),
-            color);
-
-        DrawLine3D(
-            VGet(x1, yy + 8.0f, z1),
-            VGet(x2, yy + 8.0f, z2),
-            color);
-    }
-
-    // thickness表示
-    float thick = BLOCK_SIZE * 0.08f * (thickness / 100.0f);
-
-    DrawLine3D(
-        VGet(cx - thick, yy + 16.0f, cz),
-        VGet(cx + thick, yy + 16.0f, cz),
-        color);
-
-    DrawLine3D(
-        VGet(cx, yy + 16.0f, cz - thick),
-        VGet(cx, yy + 16.0f, cz + thick),
-        color);
-}
-static void DrawHighPlatformCollision(int x, int y, int z, int color)
-{
-    // 装飾7は下をくぐれるため、配置した階では四隅の柱だけを表示する。
     float left = x * BLOCK_SIZE;
     float right = (x + 1) * BLOCK_SIZE;
-    float top = z * BLOCK_SIZE;
-    float bottom = (z + 1) * BLOCK_SIZE;
-    float postY = y * BLOCK_SIZE + 72.0f;
-    float offset = BLOCK_SIZE * 0.12f;
-    float postRadius = BLOCK_SIZE * 0.08f;
+    float front = z * BLOCK_SIZE;
+    float back = (z + 1) * BLOCK_SIZE;
+    float yy = y * BLOCK_SIZE + 24.0f;
+    DrawLine3D(VGet(left, yy, front), VGet(right, yy, back), color);
+}
 
-    DrawCollisionCircleAt(left + offset, postY, top + offset, postRadius, color);
-    DrawCollisionCircleAt(right - offset, postY, top + offset, postRadius, color);
-    DrawCollisionCircleAt(left + offset, postY, bottom - offset, postRadius, color);
-    DrawCollisionCircleAt(right - offset, postY, bottom - offset, postRadius, color);
-
-    // 上面は、配置した階の1つ上で歩ける床として表示する。
-    float floorY = (y + 1) * BLOCK_SIZE + 10.0f;
-    DrawLine3D(VGet(left, floorY, top), VGet(right, floorY, top), color);
-    DrawLine3D(VGet(right, floorY, top), VGet(right, floorY, bottom), color);
-    DrawLine3D(VGet(right, floorY, bottom), VGet(left, floorY, bottom), color);
-    DrawLine3D(VGet(left, floorY, bottom), VGet(left, floorY, top), color);
+static void DrawHighPlatformCollision(int x, int y, int z, int color)
+{
+    // 2026-07-14: 0.5床の上面だけを確認できるよう、簡易の四角線で表示する。
+    DrawCollisionBox(x, y, z, BLOCK_SIZE * 0.75f, BLOCK_SIZE * 0.75f, color);
 }
 
 static void DrawDefaultObjectCollision(int tab, int id, int x, int y, int z, int rot, int color)
@@ -818,6 +593,13 @@ static void DrawDefaultObjectCollision(int tab, int id, int x, int y, int z, int
     // 2026-05-11: オブジェクトが最初から持っている既定当たり判定を、配置後すぐ見えるよう追加。
     if (id < 0 || id >= MODEL_MAX)
         return;
+
+    if (tab == CORNER && IsEditorCornerWallPairId(id))
+    {
+        // 2026-07-21: モデル28/29は見た目に合わせ、角を構成する壁2枚分の当たり判定として表示する。
+        DrawCornerWallPairCollision(x, y, z, GetEditorCornerWallPairCollisionRot(id, rot), color);
+        return;
+    }
 
     if (tab == WALL || editorCollisionTable[id].type == EDITOR_COLL_WALL)
     {
@@ -833,7 +615,6 @@ static void DrawDefaultObjectCollision(int tab, int id, int x, int y, int z, int
 
     if (tab == CORNER && editorCollisionTable[id].type == EDITOR_COLL_NONE)
     {
-        // 2026-05-20: コーナーもモデルごとのBOX指定へ切り替えられるよう、未指定の時だけ従来の斜め線を使う。
         DrawCollisionCornerLine(
             x,
             y,
@@ -847,27 +628,14 @@ static void DrawDefaultObjectCollision(int tab, int id, int x, int y, int z, int
     }
 
     if (editorCollisionTable[id].type == EDITOR_COLL_CIRCLE)
-    {
         DrawCollisionCircle(x, y, z, editorCollisionTable[id].radius, color);
-    }
     else if (editorCollisionTable[id].type == EDITOR_COLL_BOX)
-    {
         DrawCollisionBox(x, y, z, editorCollisionTable[id].width, editorCollisionTable[id].depth, color);
-    }
     else if (editorCollisionTable[id].type == EDITOR_COLL_ARC)
-    {
-        // 2026-05-20: 道側に寄りすぎたため、コーナーの弧側へ一段外へ出して表示する。
         DrawCollisionArc(x, y, z, rot, editorCollisionTable[id].radius + 40.0f, max(10.0f, editorCollisionTable[id].width), color);
-    }
 }
 
 #pragma endregion
-
-
-
-
-
-
 
 
 

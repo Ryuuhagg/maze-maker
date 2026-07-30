@@ -1,4 +1,4 @@
-ï»¿//Scene.cpp
+//Scene.cpp
 #include"Scene.h"
 #include"Constant.h"
 #include"SceneManager.h"
@@ -11,9 +11,9 @@
 #include"MapEditor.h"
 #include"Image.h"
 #include"FontManager.h"
-// 2026-06-02: å–ã‚‹ã‚‚ã®/é¿ã‘ã‚‹ã‚‚ã®/éµ/æŠ•ã’æ•µã‚’ã‚²ãƒ¼ãƒ ã‚·ãƒ¼ãƒ³ã§å‹•ã‹ã™ãŸã‚è¿½åŠ ã€‚
+// 2026-06-02: æ‚é‚à‚Ì/”ğ‚¯‚é‚à‚Ì/Œ®/“Š‚°“G‚ğƒQ[ƒ€ƒV[ƒ“‚Å“®‚©‚·‚½‚ß’Ç‰ÁB
 #include"GameObjects.h"
-// 2026-06-12: ï¿½ï¿½ï¿½ï¿½ï¿½Gï¿½ï¿½EVENTï¿½ï¿½ï¿½ç•ªï¿½ï¿½ï¿½ï¿½ï¿½Aï¿½Gï¿½ï¿½pï¿½ï¿½ï¿½ï¿½ï¿½Æ‚ï¿½ï¿½Ä“ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß’Ç‰ï¿½ï¿½B
+// 2026-06-12: ?????G??EVENT???”Ô?????A?G??p?????????????????????B
 #include"GameEnemies.h"
 #include<fstream>
 #include<vector>
@@ -23,28 +23,17 @@
 using namespace std;
 Player p;
 Camela c(p);
+EnemyManager e;
 static bool IsMapCsvExists(int mapIndex)
 {
     if (mapIndex <= 0)
         return false;
 
-	char fileName[64];
-	if (gameCurrentMapName[0] != '\0')
-	{
-		sprintf_s(
-			fileName,
-			"%s.csv",
-			gameCurrentMapName
-		);
-	}
-	else
-	{
-		sprintf_s(
-			fileName,
-			"map%d.csv",
-			mapIndex
-		);
-	}
+    char fileName[260];
+    if (gameCurrentMapName[0] != '\0')
+        sprintf_s(fileName, sizeof(fileName), "maps\\%s\\map.csv", gameCurrentMapName);
+    else
+        sprintf_s(fileName, sizeof(fileName), "maps\\map%d\\map.csv", mapIndex);
 
     ifstream ifs(fileName);
     return ifs.good();
@@ -96,54 +85,59 @@ static string GetCsvBaseName(const char* fileName)
 
 static void RefreshTitleMapNames()
 {
-	// 2026-05-27: ã‚¿ã‚¤ãƒˆãƒ«ã§ã¯ã‚¨ãƒ‡ã‚£ã‚¿ãƒ¼ã§ä»˜ã‘ãŸCSVåã‚’ä¸€è¦§ã«ã—ã¦ã€éŠã¶ãƒãƒƒãƒ—ã‚’åå‰ã§é¸ã¹ã‚‹ã‚ˆã†ã«ã™ã‚‹ã€‚
-	titleMapNames.clear();
+    // 2026-07-15: ƒ^ƒCƒgƒ‹‚à maps/ƒ}ƒbƒv–¼/map.csv ‚ğ‚ÂƒtƒHƒ‹ƒ_‚©‚çƒ}ƒbƒvˆê——‚ğì‚éB
+    titleMapNames.clear();
+    CreateDirectoryA("maps", NULL);
 
-	WIN32_FIND_DATAA findData;
-	HANDLE handle = FindFirstFileA("*.csv", &findData);
-	if (handle != INVALID_HANDLE_VALUE)
-	{
-		do
-		{
-			if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
-				continue;
+    WIN32_FIND_DATAA findData;
+    HANDLE handle = FindFirstFileA("maps\\*", &findData);
+    if (handle != INVALID_HANDLE_VALUE)
+    {
+        do
+        {
+            if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
+                continue;
+            if (strcmp(findData.cFileName, ".") == 0 || strcmp(findData.cFileName, "..") == 0)
+                continue;
 
-			string baseName = GetCsvBaseName(findData.cFileName);
-			if (IsTitleMapConfigCsv(baseName.c_str()))
-				continue;
+            char csvPath[260];
+            sprintf_s(csvPath, sizeof(csvPath), "maps\\%s\\map.csv", findData.cFileName);
+            ifstream mapCsv(csvPath);
+            if (!mapCsv)
+                continue;
 
-			titleMapNames.push_back(baseName);
-		} while (FindNextFileA(handle, &findData));
+            titleMapNames.push_back(findData.cFileName);
+        } while (FindNextFileA(handle, &findData));
 
-		FindClose(handle);
-	}
+        FindClose(handle);
+    }
 
-	if (titleMapNames.empty())
-		titleMapNames.push_back("map1");
+    if (titleMapNames.empty())
+        titleMapNames.push_back("map1");
 }
 
 
 
 static int FindSelectableMapIndex(int currentIndex, int direction)
 {
-    // 2026-05-18: map1.csv, map2.csv ã®ã‚ˆã†ã«å¢—ã‚„ã—ãŸCSVã ã‘ã‚’ã‚¿ã‚¤ãƒˆãƒ«ç”»é¢ã§é¸ã¹ã‚‹ã‚ˆã†ã«ã™ã‚‹ã€‚
-    const int maxMapIndex = 99;
+	// 2026-05-18: map1.csv, map2.csv ‚Ì‚æ‚¤‚É‘‚â‚µ‚½CSV‚¾‚¯‚ğƒ^ƒCƒgƒ‹‰æ–Ê‚Å‘I‚×‚é‚æ‚¤‚É‚·‚éB
+	const int maxMapIndex = 99;
 
-    for (int i = 1; i <= maxMapIndex; i++)
-    {
-        int nextIndex = currentIndex + direction * i;
+	for (int i = 1; i <= maxMapIndex; i++)
+	{
+		int nextIndex = currentIndex + direction * i;
 
-        if (nextIndex < 1)
-            nextIndex = maxMapIndex + nextIndex;
+		if (nextIndex < 1)
+			nextIndex = maxMapIndex + nextIndex;
 
-        if (nextIndex > maxMapIndex)
-            nextIndex = nextIndex - maxMapIndex;
+		if (nextIndex > maxMapIndex)
+			nextIndex = nextIndex - maxMapIndex;
 
-        if (IsMapCsvExists(nextIndex))
-            return nextIndex;
-    }
+		if (IsMapCsvExists(nextIndex))
+			return nextIndex;
+	}
 
-    return currentIndex;
+	return currentIndex;
 }
 
 static const char* GetSelectedTitleMapName(int selectedMapIndex)
@@ -157,97 +151,91 @@ static const char* GetSelectedTitleMapName(int selectedMapIndex)
 	return titleMapNames[selectedMapIndex].c_str();
 }
 
-Title::Title():first(false), selectedMapIndex(0) {
-	Init();
+
+static bool IsEditorMapPosInRange(int layer, int z, int x)
+{
+	return layer >= 0 && layer < BLOCK_NUM_Y && z >= 0 && z < BLOCK_NUM_Z && x >= 0 && x < BLOCK_NUM_X;
+}
+static bool IsEditorMapStartGoalOnFloor()
+{
+	// 2026-07-16: À•W‚Ì‰Šú’l‚Å‚Í‚È‚­ASTART/GOALƒCƒxƒ“ƒg‚ªÀÛ‚É’u‚©‚ê‚Ä‚¢‚é‚©‚ğæ‚ÉŠm”F‚·‚éB
+	if (!SyncEditorStartGoalFromEvents())
+		return false;
+
+	return IsEditorMapPosInRange(startY, startZ, startX) &&
+		IsEditorMapPosInRange(goalY, goalZ, goalX) &&
+		FloorMap[startY][startZ][startX] >= 0 &&
+		FloorMap[goalY][goalZ][goalX] >= 0;
 }
 
-void Title::Init() {img = LoadGraph(title_image.path);
-	SetMouseDispFlag(TRUE);
-	changeFlg = 0;
-	// 2026-06-15: ã‚¿ã‚¤ãƒˆãƒ«ã‹ã‚‰éŠã¶æ™‚ã€START/GOALãŒåºŠã®ä¸Šã«ãªã„ãƒãƒƒãƒ—ã‚’æ­¢ã‚ã‚‹è­¦å‘Šç”¨ã€‚
-	titleMapFloorWarning = false;
-	// 2026-05-18: å‰å›é¸ã°ã‚Œã¦ã„ãŸãƒãƒƒãƒ—ç•ªå·ã‚’ã‚¿ã‚¤ãƒˆãƒ«ã®åˆæœŸè¡¨ç¤ºã«ä½¿ã†ã€‚
-	RefreshTitleMapNames();
+static bool IsStartGoalConnected()
+{
+	LoadGameMap();
+	if (!SyncEditorStartGoalFromEvents())
+		return false;
 
-	selectedMapIndex =gameCurrentMapName[0] != '\0'? FindTitleMapNameIndex(gameCurrentMapName): 0;
+	//if (startY != goalY)
+		//return false;
+
+	auto path = FindMapPathBFS(startY, startX, startZ, goalY, goalX, goalZ);
+	return !path.empty();
+}
+
+Title::Title(){
+	Init();
+}
+void Title::UISet() {
 	uiManager.SetScrollEnabled(false);
-
+	uiManager.Clear();
 	auto title_text = make_shared<Label>(Pos{ 100, 100 }, 0, 0, "TITLE", WHITE, 32);
 
-	auto gameBtn = make_shared<Button>(Pos{ 1000, 300 }, 150, 50);
+	auto gameBtn = make_shared<Button>(Pos{ 1000, 400 }, 150, 50);
 	gameBtn->SetOnClick([this]() {
 		changeFlg = 1;
 		});
 
-	auto game_text = make_shared<Label>(Pos{ 1050, 320 }, 0, 0, "éŠã¶", BLACK);
-
-	// 2026-05-18: CSVã‚’åˆ‡ã‚Šæ›¿ãˆã¦ã‹ã‚‰éŠã¹ã‚‹ã‚ˆã†ã€ã‚¿ã‚¤ãƒˆãƒ«ã«ãƒãƒƒãƒ—é¸æŠãƒœã‚¿ãƒ³ã‚’è¿½åŠ ã€‚
-	auto mapPrevBtn = make_shared<Button>(Pos{ 910, 230 }, 80, 40);
-	mapPrevBtn->SetOnClick([this]() {
-		MoveTitleMapSelection(selectedMapIndex, -1);
-		});
-
-	auto mapPrevText = make_shared<Label>(Pos{ 930, 242 }, 0, 0, "å‰ã¸", BLACK);
-
-	auto mapNextBtn = make_shared<Button>(Pos{ 1160, 230 }, 80, 40);
-	mapNextBtn->SetOnClick([this]() {
-		MoveTitleMapSelection(selectedMapIndex, 1);
-		});
-
-	auto mapNextText = make_shared<Label>(Pos{ 1180, 242 }, 0, 0, "æ¬¡ã¸", BLACK);
-
-	auto createBtn = make_shared<Button>(Pos{ 1000, 400 }, 150, 50);
-	createBtn->SetOnClick([this]() {
-		changeFlg = 2;
-		});
-
-	auto create_text = make_shared<Label>(Pos{ 1050, 420 }, 0, 0, "ä½œã‚‹", BLACK);
+	auto game_text = make_shared<Label>(Pos{ 1050, 420 }, 0, 0, "—V‚Ô", BLACK);
 
 	auto optionBtn = make_shared<Button>(Pos{ 1000, 500 }, 150, 50);
 	optionBtn->SetOnClick([this]() {
-		changeFlg = 3;
+		changeFlg = 2;
 		});
 
-	auto option_text = make_shared<Label>(Pos{ 1050, 520 }, 0, 0, "è¨­å®š", BLACK);
+	auto option_text = make_shared<Label>(Pos{ 1050, 520 }, 0, 0, "İ’è", BLACK);
 
 	auto endBtn = make_shared<Button>(Pos{ 1000, 600 }, 150, 50);
-		endBtn->SetOnClick([this]() {
+	endBtn->SetOnClick([this]() {
 		DxLib_End();
 		});
 
-	auto end_text = make_shared<Label>(Pos{ 1050, 620 }, 0, 0, "çµ‚äº†", BLACK);
+	auto end_text = make_shared<Label>(Pos{ 1050, 620 }, 0, 0, "I—¹", BLACK);
 
-	//ã‚°ãƒ«ãƒ¼ãƒ—IDè¨­å®š
-	mapPrevBtn->SetGroupId(1);
-	mapNextBtn->SetGroupId(1);
+	gameBtn->SetGroupId(1);
 
-	gameBtn->SetGroupId(2);
+	optionBtn->SetGroupId(2);
 
-	createBtn->SetGroupId(3);
+	endBtn->SetGroupId(3);
 
-	optionBtn->SetGroupId(4);
-
-	endBtn->SetGroupId(5);
-
-	//UIMAnagerã«è¿½åŠ 
+	//UIMAnager‚É’Ç‰Á
 	uiManager.Add(title_text);
-
-	uiManager.Add(mapPrevBtn);
-	uiManager.Add(mapPrevText);
-	uiManager.Add(mapNextBtn);
-	uiManager.Add(mapNextText);
 
 	uiManager.Add(gameBtn);
 	uiManager.Add(game_text);
-
-	uiManager.Add(createBtn);
-	uiManager.Add(create_text);
 
 	uiManager.Add(optionBtn);
 	uiManager.Add(option_text);
 
 	uiManager.Add(endBtn);
 	uiManager.Add(end_text);
+}
+void Title::Init() {
+	img = LoadGraph(title_image.path);
+	SetMouseDispFlag(TRUE);
+
+	changeFlg = 0;
+	first = false;
+	
+	UISet();
 }
 static void MoveTitleMapSelection(int& selectedMapIndex, int direction)
 {
@@ -264,30 +252,11 @@ static void MoveTitleMapSelection(int& selectedMapIndex, int direction)
 		selectedMapIndex = 0;
 }
 void Title::Draw() {
-	DrawGraph(0,0,img,true);
-	//DrawString(WIDTH / 2, HEIGHT / 2, "ã‚¿ã‚¤ãƒˆãƒ«ç”»é¢",GetColor(255,255,255));
+	DrawExtendGraph(0, 0, WIDTH, HEIGHT, img, true);
+	
 	uiManager.Draw();
-	// 2026-05-18: é¸æŠä¸­ã®CSVãŒåˆ†ã‹ã‚‹ã‚ˆã†ã€ãƒœã‚¿ãƒ³ã¨ã¯åˆ¥ã«ç¾åœ¨ã®ãƒãƒƒãƒ—ç•ªå·ã‚’è¡¨ç¤ºã™ã‚‹ã€‚
-	DrawFormatString(1020, 240, WHITE, "MAP  %s.csv", GetSelectedTitleMapName(selectedMapIndex));
-
-	if (titleMapFloorWarning) {
-		// 2026-06-15: ã‚¿ã‚¤ãƒˆãƒ«ã‹ã‚‰éŠã¶æ™‚ã‚‚ã€START/GOALãŒåºŠä¸Šã«ãªã„ç†ç”±ã‚’è¡¨ç¤ºã™ã‚‹ãŸã‚è¿½åŠ ã€‚
-		DrawBox(300, 250, 980, 420, GetColor(10, 10, 10), TRUE);
-		DrawBox(300, 250, 980, 420, GetColor(255, 255, 255), FALSE);
-		DrawString(330, 282, "ã‚¹ã‚¿ãƒ¼ãƒˆã¨ã‚´ãƒ¼ãƒ«ã¯åºŠã®ä¸Šã«ç½®ã„ã¦ãã ã•ã„ã€‚", GetColor(255, 255, 0));
-		DrawString(330, 320, "ã“ã®ãƒãƒƒãƒ—ã¯ã¾ã éŠã¹ã¾ã›ã‚“ã€‚", GetColor(220, 240, 255));
-		DrawString(330, 360, "Enter/Space/C/F9: é–‰ã˜ã‚‹", GetColor(220, 240, 255));
-	}
 }
 void Title::Update(SceneManager& manager) {
-	if (titleMapFloorWarning) {
-		if (Input::IsKeyTrigger(KEY_INPUT_RETURN) || Input::IsKeyTrigger(KEY_INPUT_SPACE) ||
-			Input::IsKeyTrigger(KEY_INPUT_C) || Input::IsKeyTrigger(KEY_INPUT_F9) ||
-			Input::IsKeyTrigger(KEY_INPUT_Y) || Input::IsKeyTrigger(KEY_INPUT_N)) {
-			titleMapFloorWarning = false;
-		}
-		return;
-	}
 	
 	if (!first) {
 		option.LoadOption(config);
@@ -296,10 +265,10 @@ void Title::Update(SceneManager& manager) {
 		first = true;
 
 		uiManager.SetSoundManager(&manager.GetSoundManager());
-		manager.GetSoundManager().Play("title_bgm");
+		manager.GetSoundManager().Play("bgm1");
 	}
 
-	//Padã®ãƒœã‚¿ãƒ³ã‚’èª¿ã¹ã‚‹ã‚„ã¤
+	//Pad‚Ìƒ{ƒ^ƒ“‚ğ’²‚×‚é‚â‚Â
 	/*
 	DINPUT_JOYSTATE js;
 
@@ -309,7 +278,7 @@ void Title::Update(SceneManager& manager) {
 		{
 			if (js.Buttons[i])
 			{
-				printfDx("Button[%d] ãŒæŠ¼ã•ã‚ŒãŸ\n", i);
+				printfDx("Button[%d] ‚ª‰Ÿ‚³‚ê‚½\n", i);
 			}
 		}
 	}
@@ -317,37 +286,18 @@ void Title::Update(SceneManager& manager) {
 		printfDx("aaa");
 	}
 	*/
-	//Padã‚’æŒ¯å‹•ã•ã›ã‚‹ã‚„ã¤
+	//Pad‚ğU“®‚³‚¹‚é‚â‚Â
 	//StartJoypadVibration(DX_INPUT_PAD1, 1000, 2000, -1);
 
 	switch (changeFlg) {
 	case 1:
-		// 2026-05-27: ã‚¿ã‚¤ãƒˆãƒ«ã§é¸ã‚“ã CSVåã‚’ã‚²ãƒ¼ãƒ å´ã®èª­ã¿è¾¼ã¿åã¸æ¸¡ã™ã€‚
-		strcpy_s(gameCurrentMapName, sizeof(gameCurrentMapName), GetSelectedTitleMapName(selectedMapIndex));
-		gameCurrentMapIndex = selectedMapIndex + 1;
-		// 2026-06-15: ã‚¿ã‚¤ãƒˆãƒ«ã‹ã‚‰éŠã¶æ™‚ã‚‚ã€START/GOALãŒåºŠä¸Šã«ãªã„ãƒãƒƒãƒ—ã¯é–‹å§‹ã—ãªã„ã€‚
-		LoadMapByName(gameCurrentMapName);
-		if (!IsEditorMapStartGoalOnFloor()) {
-			titleMapFloorWarning = true;
-			changeFlg = 0;
-			break;
-		}
 		manager.GetSoundManager().Play("confirm");
 		manager.ChangeScene(
-			make_unique<Game>(),
+			make_unique<Select>(),
 			make_unique<Fade>()
 		);
 		break;
 	case 2:
-		// 2026-05-27: ã‚¿ã‚¤ãƒˆãƒ«ã§é¸ã‚“ã CSVåã‚’ã‚¨ãƒ‡ã‚£ã‚¿ãƒ¼å´ã«ã‚‚æ¸¡ã—ã€å†ç·¨é›†ã§ãã‚‹ã‚ˆã†ã«ã™ã‚‹ã€‚
-		strcpy_s(gameCurrentMapName, sizeof(gameCurrentMapName), GetSelectedTitleMapName(selectedMapIndex));
-		manager.GetSoundManager().Play("confirm");
-		manager.ChangeScene(
-			make_unique<Create>(),
-			make_unique<Slide>()
-		);
-		break;
-	case 3:
 		manager.GetSoundManager().Play("confirm");
 		manager.ChangeScene(
 			make_unique<OptionMenu>(),
@@ -358,8 +308,492 @@ void Title::Update(SceneManager& manager) {
 	uiManager.Update();
 }
 
-Game::Game(GameLaunchMode launchMode) : launchMode(launchMode){
+Select::Select() {
 	Init();
+}
+
+Select::~Select()
+{
+	if (thumbnail_img != -1)
+	{
+		DeleteGraph(thumbnail_img);
+		thumbnail_img = -1;
+	}
+}
+
+void Select::ApplySelectedMap()
+{
+	const char* selectedMapName =
+		GetSelectedTitleMapName(selectedMapIndex);
+
+	strcpy_s(
+		gameCurrentMapName,
+		sizeof(gameCurrentMapName),
+		selectedMapName
+	);
+
+	gameCurrentMapIndex = selectedMapIndex + 1;
+}
+
+void Select::LoadSelectedThumbnail()
+{
+	// ‘O‚ÌƒTƒ€ƒlƒCƒ‹‚ğíœ
+	if (thumbnail_img != -1)
+	{
+		DeleteGraph(thumbnail_img);
+		thumbnail_img = -1;
+	}
+
+	const char* selectedMapName =
+		GetSelectedTitleMapName(selectedMapIndex);
+
+	MapInfo mapInfo;
+
+	if (!LoadMapInfoByName(selectedMapName, mapInfo))
+	{
+		return;
+	}
+
+	// ƒTƒ€ƒlƒCƒ‹‚ª“o˜^‚³‚ê‚Ä‚¢‚È‚¢
+	if (mapInfo.thumbnail[0] == '\0')
+	{
+		return;
+	}
+
+	thumbnail_img = LoadGraph(mapInfo.thumbnail);
+}
+
+void Select::UISet()
+{
+	uiManager.SetScrollEnabled(false);
+	uiManager.Clear();
+
+	// ‘O‚Ìƒ}ƒbƒv
+	auto prevBtn = make_shared<Button>(
+		Pos{ 170, 120 },
+		160,
+		55
+	);
+
+	prevBtn->SetOnClick([this]() {
+		MoveTitleMapSelection(selectedMapIndex, -1);
+		LoadSelectedThumbnail();
+		});
+
+	auto prevText = make_shared<Label>(
+		Pos{ 215, 138 },
+		0, 0,
+		"‘O‚Ö",
+		BLACK
+	);
+
+	// Ÿ‚Ìƒ}ƒbƒv
+	auto nextBtn = make_shared<Button>(
+		Pos{ 950, 120 },
+		160,
+		55
+	);
+
+	nextBtn->SetOnClick([this]() {
+		MoveTitleMapSelection(selectedMapIndex, 1);
+		LoadSelectedThumbnail();
+		});
+
+	auto nextText = make_shared<Label>(
+		Pos{ 995, 138 },
+		0, 0,
+		"Ÿ‚Ö",
+		BLACK
+	);
+
+	// —V‚Ô
+	auto playBtn = make_shared<Button>(
+		Pos{ 440, 470 },
+		160,
+		55
+	);
+
+	playBtn->SetOnClick([this]() {
+		changeFlg = 1;
+		});
+
+	auto playText = make_shared<Label>(
+		Pos{ 490, 488 },
+		0, 0,
+		"—V‚Ô",
+		BLACK
+	);
+
+	// ì‚é
+	auto createBtn = make_shared<Button>(
+		Pos{ 680, 470 },
+		160,
+		55
+	);
+
+	createBtn->SetOnClick([this]() {
+		changeFlg = 2;
+		});
+
+	auto createText = make_shared<Label>(
+		Pos{ 730, 488 },
+		0, 0,
+		"ì‚é",
+		BLACK
+	);
+
+	// ƒ^ƒCƒgƒ‹‚Ö–ß‚é
+	auto backBtn = make_shared<Button>(
+		Pos{ 560, 565 },
+		160,
+		55
+	);
+
+	backBtn->SetOnClick([this]() {
+		changeFlg = 3;
+		});
+
+	auto backText = make_shared<Label>(
+		Pos{ 610, 583 },
+		0, 0,
+		"–ß‚é",
+		BLACK
+	);
+
+	// ã‰ºE¶‰EˆÚ“®—p
+	prevBtn->SetGroupId(1);
+	nextBtn->SetGroupId(1);
+
+	playBtn->SetGroupId(2);
+	createBtn->SetGroupId(2);
+
+	backBtn->SetGroupId(3);
+
+	uiManager.Add(prevBtn);
+	uiManager.Add(prevText);
+
+	uiManager.Add(nextBtn);
+	uiManager.Add(nextText);
+
+	uiManager.Add(playBtn);
+	uiManager.Add(playText);
+
+	uiManager.Add(createBtn);
+	uiManager.Add(createText);
+
+	uiManager.Add(backBtn);
+	uiManager.Add(backText);
+}
+
+void Select::Init() {
+	SetMouseDispFlag(TRUE);
+
+	changeFlg = 0;
+	first = false;
+
+	titleMapFloorWarning = false;
+	showStartGoalWarning = false;
+
+	RefreshTitleMapNames();
+
+	selectedMapIndex =
+		gameCurrentMapName[0] != '\0'
+		? FindTitleMapNameIndex(gameCurrentMapName)
+		: 0;
+
+	LoadSelectedThumbnail();
+
+	UISet();
+}
+
+void Select::Draw()
+{
+	ClearDrawScreen();
+
+	// ”wŒi
+	DrawBox(
+		0, 0,
+		WIDTH, HEIGHT,
+		GetColor(30, 40, 60),
+		TRUE
+	);
+
+	const int infoLeft = 360;
+	const int infoTop = 70;
+	const int infoRight = 920;
+	const int infoBottom = 410;
+
+	// ƒ}ƒbƒvî•ñ‚Ì”wŒi
+	DrawBox(
+		infoLeft,
+		infoTop,
+		infoRight,
+		infoBottom,
+		GetColor(20, 30, 45),
+		TRUE
+	);
+
+	DrawBox(
+		infoLeft,
+		infoTop,
+		infoRight,
+		infoBottom,
+		GetColor(220, 235, 255),
+		FALSE
+	);
+
+	// ƒTƒ€ƒlƒCƒ‹‚ğ•\¦‚·‚é”ÍˆÍ
+	const int thumbnailLeft = 390;
+	const int thumbnailTop = 90;
+	const int thumbnailRight = 890;
+	const int thumbnailBottom = 300;
+
+	if (thumbnail_img != -1)
+	{
+		// ‰æ‘œ‚ğw’è‚µ‚½”ÍˆÍ‚ÉŠg‘åEk¬‚µ‚Ä•\¦
+		DrawExtendGraph(
+			thumbnailLeft,
+			thumbnailTop,
+			thumbnailRight,
+			thumbnailBottom,
+			thumbnail_img,
+			TRUE
+		);
+	}
+	else
+	{
+		// ƒTƒ€ƒlƒCƒ‹‚ª‚È‚¢ê‡
+		DrawBox(
+			thumbnailLeft,
+			thumbnailTop,
+			thumbnailRight,
+			thumbnailBottom,
+			GetColor(45, 55, 70),
+			TRUE
+		);
+
+		DrawString(
+			565,
+			185,
+			"NO IMAGE",
+			GetColor(180, 190, 200)
+		);
+	}
+
+	const char* selectedMapName =
+		GetSelectedTitleMapName(selectedMapIndex);
+
+	// ƒ}ƒbƒv–¼
+	DrawFormatString(
+		390,
+		320,
+		WHITE,
+		"ƒ}ƒbƒv–¼F%s",
+		selectedMapName
+	);
+
+	MapInfo selectedMapInfo;
+
+	if (LoadMapInfoByName(selectedMapName, selectedMapInfo))
+	{
+		if (selectedMapInfo.description[0] != '\0')
+		{
+			DrawFormatString(
+				390,
+				360,
+				GetColor(220, 235, 255),
+				"à–¾F%s",
+				selectedMapInfo.description
+			);
+		}
+		else
+		{
+			DrawString(
+				390,
+				360,
+				"à–¾F‚È‚µ",
+				GetColor(180, 190, 200)
+			);
+		}
+	}
+
+	uiManager.Draw();
+
+	// Œx‰æ–Ê
+	if (titleMapFloorWarning)
+	{
+		DrawBox(
+			300, 250,
+			980, 420,
+			GetColor(10, 10, 10),
+			TRUE
+		);
+
+		DrawBox(
+			300, 250,
+			980, 420,
+			WHITE,
+			FALSE
+		);
+
+		DrawString(
+			330, 282,
+			"ƒXƒ^[ƒg‚ÆƒS[ƒ‹‚Í°‚Ìã‚É’u‚¢‚Ä‚­‚¾‚³‚¢B",
+			GetColor(255, 255, 0)
+		);
+
+		DrawString(
+			330, 320,
+			"‚±‚Ìƒ}ƒbƒv‚Í‚Ü‚¾—V‚×‚Ü‚¹‚ñB",
+			GetColor(220, 240, 255)
+		);
+
+		DrawString(
+			330, 360,
+			"Œˆ’èƒL[‚ğ‰Ÿ‚µ‚Ä•Â‚¶‚é",
+			GetColor(220, 240, 255)
+		);
+	}
+
+	if (showStartGoalWarning)
+	{
+		DrawBox(
+			300, 250,
+			980, 420,
+			GetColor(10, 10, 10),
+			TRUE
+		);
+
+		DrawBox(
+			300, 250,
+			980, 420,
+			WHITE,
+			FALSE
+		);
+
+		DrawString(
+			330, 282,
+			"ƒXƒ^[ƒg‚©‚çƒS[ƒ‹‚Ü‚ÅŒq‚ª‚Á‚Ä‚¢‚Ü‚¹‚ñB",
+			GetColor(255, 255, 0)
+		);
+
+		DrawString(
+			330, 320,
+			"‚±‚Ìƒ}ƒbƒv‚Í‚Ü‚¾—V‚×‚Ü‚¹‚ñB",
+			GetColor(220, 240, 255)
+		);
+
+		DrawString(
+			330, 360,
+			"Œˆ’èƒL[‚ğ‰Ÿ‚µ‚Ä•Â‚¶‚é",
+			GetColor(220, 240, 255)
+		);
+	}
+}
+
+void Select::Update(SceneManager& manager) {
+	if (titleMapFloorWarning)
+	{
+		if (Input::IsKeyTrigger(KEY_INPUT_RETURN) ||
+			Input::IsKeyTrigger(KEY_INPUT_SPACE) ||
+			Input::IsKeyTrigger(KEY_INPUT_C) ||
+			Input::IsKeyTrigger(KEY_INPUT_F9) ||
+			Input::IsKeyTrigger(KEY_INPUT_Y) ||
+			Input::IsKeyTrigger(KEY_INPUT_N))
+		{
+			titleMapFloorWarning = false;
+		}
+
+		return;
+	}
+
+	if (showStartGoalWarning)
+	{
+		if (Input::IsKeyTrigger(KEY_INPUT_RETURN) ||
+			Input::IsKeyTrigger(KEY_INPUT_SPACE) ||
+			Input::IsKeyTrigger(KEY_INPUT_C) ||
+			Input::IsKeyTrigger(KEY_INPUT_F9) ||
+			Input::IsKeyTrigger(KEY_INPUT_Y) ||
+			Input::IsKeyTrigger(KEY_INPUT_N))
+		{
+			showStartGoalWarning = false;
+		}
+
+		return;
+	}
+
+	if (!first)
+	{
+		uiManager.SetSoundManager(
+			&manager.GetSoundManager()
+		);
+
+		first = true;
+	}
+
+	switch (changeFlg)
+	{
+		// ‘I‘ğ‚µ‚½ƒ}ƒbƒv‚Å—V‚Ô
+	case 1:
+		ApplySelectedMap();
+		LoadMapByName(gameCurrentMapName);
+
+		if (!IsEditorMapStartGoalOnFloor())
+		{
+			titleMapFloorWarning = true;
+			changeFlg = 0;
+			break;
+		}
+
+		if (!IsStartGoalConnected())
+		{
+			showStartGoalWarning = true;
+			changeFlg = 0;
+			break;
+		}
+
+		manager.GetSoundManager().Play("confirm");
+
+		manager.ChangeScene(
+			make_unique<Game>(),
+			make_unique<Fade>()
+		);
+
+		return;
+
+		// ‘I‘ğ‚µ‚½ƒ}ƒbƒv‚ğ•ÒW‚·‚é
+	case 2:
+		ApplySelectedMap();
+		manager.GetSoundManager().Play("confirm");
+
+		manager.ChangeScene(
+			make_unique<Create>(),
+			make_unique<Slide>()
+		);
+
+		return;
+
+		// ƒ^ƒCƒgƒ‹‚Ö–ß‚é
+	case 3:
+		manager.GetSoundManager().Play("cancel");
+
+		manager.ChangeScene(
+			make_unique<Title>(),
+			make_unique<Slide>()
+		);
+
+		return;
+	}
+
+	uiManager.Update();
+}
+
+Game::Game(GameLaunchMode launchMode) : launchMode(launchMode) {
+	Init();
+}
+
+void Game::UISet() {
+	BuildPauseUI();
 }
 
 void Game::Init() {
@@ -367,6 +801,8 @@ void Game::Init() {
 	goTitle = false;
 
 	confirmSaveOnTitle = false;
+
+	first = false;
 
 	if (gameCurrentMapName[0] != '\0')
 	{
@@ -380,34 +816,40 @@ void Game::Init() {
 	showingOption = false;
 
 	timer.Reset();
-
-	BuildPauseUI();
-
+	UISet();
 	InitGameMap();
-	// 2026-06-02: ãƒãƒƒãƒ—èª­è¾¼å¾Œã®EVENTé…ç½®ã‹ã‚‰ã‚²ãƒ¼ãƒ ä¸­ã‚®ãƒŸãƒƒã‚¯ã‚’ç”Ÿæˆã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+	// 2026-06-02: ƒ}ƒbƒv“ÇŒã‚ÌEVENT”z’u‚©‚çƒQ[ƒ€’†ƒMƒ~ƒbƒN‚ğ¶¬‚·‚é‚½‚ß’Ç‰ÁB
 	InitGameObjects();
-	// 2026-06-12: [ENEMY]ï¿½ï¿½ï¿½ï¿½Ç‚ñ‚¾“Gï¿½ï¿½ï¿½AEVENTï¿½Mï¿½~ï¿½bï¿½Nï¿½Æ‚Í•Ê‚Éï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½é‚½ï¿½ß’Ç‰ï¿½ï¿½B
+	// 2026-06-12: [ENEMY]???????G???AEVENT?M?~?b?N???????????????????B
 	//InitGameEnemies();
 	p.Init();
+	e.Init();
+
 }
 
 void Game::Draw() {
 	p.Draw();
-	//DrawString(WIDTH / 2, HEIGHT-550, "ã‚²ãƒ¼ãƒ ç”»é¢", GetColor(255, 255, 255));
+	// 2026-07-23: “GƒfƒoƒbƒO•¶š‚Ío‚³‚¸AŒ»İŠK‘w‚Ì“G–{‘Ì‚¾‚¯•`‰æ‚·‚éB
+	e.DrawLayer(GetGameDrawLayer());
+	//DrawString(WIDTH / 2, HEIGHT-550, "ƒQ[ƒ€‰æ–Ê", GetColor(255, 255, 255));
 	DrawGameMap();
-	// 2026-05-18: è¿·è·¯æ¢ç´¢ä¸­ã«éšå±¤ã¨é€šã£ãŸé“ãŒè¦‹ãˆã‚‹ã‚ˆã†ã€3Dæç”»ã®å¾Œã«ãƒŸãƒ‹ãƒãƒƒãƒ—ã‚’é‡ã­ã‚‹ã€‚
-	// 2026-06-02: å–ã‚‹ã‚‚ã®/éµ/æ•µå¼¾ãªã©ã‚’3Dä¸Šã«è¡¨ç¤ºã—ã€çŠ¶æ…‹HUDã‚‚å‡ºã™ãŸã‚è¿½åŠ ã€‚
+	// 2026-05-18: –À˜H’Tõ’†‚ÉŠK‘w‚Æ’Ê‚Á‚½“¹‚ªŒ©‚¦‚é‚æ‚¤A3D•`‰æ‚ÌŒã‚Éƒ~ƒjƒ}ƒbƒv‚ğd‚Ë‚éB
+	// 2026-06-02: æ‚é‚à‚Ì/Œ®/“G’e‚È‚Ç‚ğ3Dã‚É•\¦‚µAó‘ÔHUD‚ào‚·‚½‚ß’Ç‰ÁB
 	DrawGameObjects();
-	// 2026-06-12: ï¿½Gï¿½{ï¿½Ì‚Æ“Gï¿½eï¿½ï¿½EVENTï¿½`ï¿½æ‚©ï¿½ç•ªï¿½ï¿½ï¿½Ä•`ï¿½æ‚·ï¿½é‚½ï¿½ß’Ç‰ï¿½ï¿½B
+	// 2026-06-12: ?G?{???G?e??EVENT?`?”Y?”Ô????`?????????B
 	//DrawGameEnemies();
 	DrawMiniMap(p.getVECTOR());
 	DrawGameObjectHUD();
 	DrawFormatString(20, 92, WHITE, "LIFE %d", p.GetLife());
+	DrawFormatString(20, 122, WHITE, "layer %d", p.GetLayer());
 
-	elapsed = (timer.Elapsed()/1000)%60;
+	elapsed = (timer.Elapsed() / 1000) % 60;
 	int minutes = timer.Elapsed() / 60000;
-	
+
 	DrawFormatStringToHandle(WIDTH / 2, 100, WHITE, FontManager::Get(32), "%02d:%02d", minutes, elapsed);
+
+	// 2026-07-15: ŠK‘w‚ğ‚Ü‚½‚®‚Í‰æ–Ê‘S‘Ì‚ğˆÃ“]‚³‚¹A1‘w‚¸‚ÂØ‚è‘Ö‚í‚Á‚½‚æ‚¤‚ÉŒ©‚¹‚éB
+	DrawGameLayerFadeOverlay();
 
 	if (isPause) {
 		if (showingOption) {
@@ -425,48 +867,67 @@ void Game::Draw() {
 }
 
 void Game::Update(SceneManager& manager) {
+	if (!first) {
+		manager.GetSoundManager().Play("bgm2");
+		first = true;
+	}
 
 	if (Input::IsActionTrigger(Action::Pause)) {
-		isPause = !isPause;
+		if (showingOption) {
+			showingOption = false;
+		}
+		else {
+			isPause = !isPause;
+		}
+
 		Input::CenterMouse();
 	}
 
-	if (!isPause) 
+	if (!isPause)
 	{
 		SetMouseDispFlag(FALSE);
 		Input::UpdateMouseDeltaFromCenter();
 
 		p.Update();
+		e.Update(p.getVECTOR(), p.GetLayer());
 		c.Update();
 		UpdateGameMap();
 
 		timer.Resume();
 
-		// 2026-06-02: å–ã‚‹ã‚‚ã®/é¿ã‘ã‚‹ã‚‚ã®/éµæ‰‰/æŠ•ã’æ•µã‚’ãƒ—ãƒ¬ã‚¤ãƒ¤ãƒ¼ä½ç½®ã«åˆã‚ã›ã¦æ›´æ–°ã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+		// 2026-06-02: æ‚é‚à‚Ì/”ğ‚¯‚é‚à‚Ì/Œ®”à/“Š‚°“G‚ğƒvƒŒƒCƒ„[ˆÊ’u‚É‡‚í‚¹‚ÄXV‚·‚é‚½‚ß’Ç‰ÁB
 		bool playerDamaged = false;
 		int playerLayer = GetMapLayerFromWorldY(p.getVECTOR().y + BLOCK_SIZE * 0.5f);
 		UpdateGameObjects(p.getVECTOR(), playerLayer, playerDamaged);
-		// 2026-06-12: ï¿½GAIï¿½Æ“Gï¿½eï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ—ï¿½ï¿½ï¿½ï¿½ÄXï¿½Vï¿½ï¿½ï¿½é‚½ï¿½ß’Ç‰ï¿½ï¿½B
+		// 2026-06-12: ?GAI??G?e????????????X?V?????????B
 	//	UpdateGameEnemies(p.getVECTOR(), playerLayer, playerDamaged);
 		if (playerDamaged)
 		{
-			manager.Trans(make_unique<Fade>());
+			timer.Pause();
 			p.Damage();
+			manager.Trans(make_unique<DamageFade>(p.GetLife()));
+		}
+		if (e.IsHitPlayer(p.getVECTOR(), p.GetLayer()))
+		{
+			timer.Pause();
+			p.Damage();
+			manager.Trans(make_unique<DamageFade>(p.GetLife()));
 		}
 
-		// 2026-06-02: ãƒ©ã‚¤ãƒ•ãŒå°½ããŸæ™‚ã«ã‚²ãƒ¼ãƒ ã‚’çµ‚ã‚ã‚‰ã›ã‚‹ãŸã‚è¿½åŠ ã€‚
+		// 2026-06-02: ƒ‰ƒCƒt‚ªs‚«‚½‚ÉƒQ[ƒ€‚ğI‚í‚ç‚¹‚é‚½‚ß’Ç‰ÁB
 		if (!p.IsAlive())
 		{
-			manager.ChangeScene(make_unique<Title>(), make_unique<Slide>());
+			timer.Pause();
+			manager.ChangeScene(make_unique<Result>(timer.Elapsed(), launchMode, GameResult::Lose), make_unique<Fade>());
 			return;
 		}
 
-		// 2026-06-02: éµã¾ãŸã¯åé›†æ¡ä»¶ã‚’æº€ãŸã—ãŸæ™‚ã ã‘ã‚´ãƒ¼ãƒ«ã§ãã‚‹ã‚ˆã†è¿½åŠ ã€‚
-		// 6/19 å¤‰æ›´
+		// 2026-06-02: Œ®‚Ü‚½‚ÍûWğŒ‚ğ–‚½‚µ‚½‚¾‚¯ƒS[ƒ‹‚Å‚«‚é‚æ‚¤’Ç‰ÁB
+		// 6/19 •ÏX
 		if (IsGoal())
 		{
 			timer.Pause();
-			manager.ChangeScene(make_unique<Result>(timer.Elapsed(), GameLaunchMode::EditorTestPlay), make_unique<Goal>());
+			manager.ChangeScene(make_unique<Result>(timer.Elapsed(), launchMode, GameResult::Win), make_unique<Goal>());
 			return;
 		}
 	}
@@ -521,12 +982,12 @@ void Game::DrawOption() {
 	SetUseZBuffer3D(FALSE);
 	SetWriteZBuffer3D(FALSE);
 
-	// èƒŒæ™¯ã‚’å°‘ã—æš—ãã™ã‚‹
+	// ”wŒi‚ğ­‚µˆÃ‚­‚·‚é
 	SetDrawBlendMode(DX_BLENDMODE_ALPHA, 100);
 	DrawBox(0, 0, WIDTH, HEIGHT, BLACK, TRUE);
 	SetDrawBlendMode(DX_BLENDMODE_NOBLEND, 0);
 
-	// ä¸­å¤®ãƒ‘ãƒãƒ«
+	// ’†‰›ƒpƒlƒ‹
 	int panelX = 440;
 	int panelY = 140;
 	int panelW = 400;
@@ -563,28 +1024,28 @@ void Game::BuildPauseUI() {
 		isPause = false;
 		});
 
-	auto backText = make_shared<Label>(Pos{ btnX + 95, btnY + 20 }, 0, 0, "å†é–‹", BLACK, 20);
+	auto backText = make_shared<Label>(Pos{ btnX + 95, btnY + 20 }, 0, 0, "ÄŠJ", BLACK, 20);
 
 	auto optionBtn = make_shared<Button>(Pos{ btnX, btnY + gap }, btnW, btnH);
 	optionBtn->SetOnClick([this]() {
 		goOption = true;
 		});
 
-	auto optionText = make_shared<Label>(Pos{ btnX + 95, btnY + gap + 20 }, 0, 0, "è¨­å®š", BLACK, 20);
+	auto optionText = make_shared<Label>(Pos{ btnX + 95, btnY + gap + 20 }, 0, 0, "İ’è", BLACK, 20);
 
 	auto restartBtn = make_shared<Button>(Pos{ btnX, btnY + gap * 2 }, btnW, btnH);
 	restartBtn->SetOnClick([this]() {
 		restart = true;
 		});
 
-	auto restartText = make_shared<Label>(Pos{ btnX + 75, btnY + gap * 2 + 20 }, 0, 0, "ãƒªã‚¹ã‚¿ãƒ¼ãƒˆ", BLACK, 20);
+	auto restartText = make_shared<Label>(Pos{ btnX + 75, btnY + gap * 2 + 20 }, 0, 0, "ƒŠƒXƒ^[ƒg", BLACK, 20);
 
 	auto titleBtn = make_shared<Button>(Pos{ btnX, btnY + gap * 3 }, btnW, btnH);
 	titleBtn->SetOnClick([this]() {
 		goTitle = true;
 		});
 
-	const char* exitLabel = launchMode == GameLaunchMode::EditorTestPlay ? "ç·¨é›†ã«æˆ»ã‚‹" : "ã‚¿ã‚¤ãƒˆãƒ«ã¸";
+	const char* exitLabel = launchMode == GameLaunchMode::EditorTestPlay ? "•ÒW‚É–ß‚é" : "ƒ^ƒCƒgƒ‹‚Ö";
 	auto titleText = make_shared<Label>(Pos{ 580, 510 }, 0, 0, exitLabel, BLACK, 20);
 
 
@@ -602,24 +1063,57 @@ void Game::BuildPauseUI() {
 	uiManager.Add(titleBtn);
 	uiManager.Add(titleText);
 }
-// 6/19è¿½åŠ 
-// ã‚´ãƒ¼ãƒ«ã®åˆ¤å®šé•·ã„ã‹ã‚‰ã“ã‚Œã«ã¾ã¨ã‚ã‚‹
+// 6/19’Ç‰Á
+// ƒS[ƒ‹‚Ì”»’è’·‚¢‚©‚ç‚±‚ê‚É‚Ü‚Æ‚ß‚é
 bool Game::IsGoal() {
-	int playerLayer = GetMapLayerFromWorldY(p.getVECTOR().y + BLOCK_SIZE * 0.5f);
+	// 2026-07-15: ƒWƒƒƒ“ƒv‚‚³‚ÅãŠKˆµ‚¢‚É‚È‚é‚ÆA1ŠK‚©‚ç2ŠKƒS[ƒ‹‚ÉG‚ê‚½”»’è‚É‚È‚é‚½‚ßÀÛ‚ÌŠ‘®ƒŒƒCƒ„[‚ğŒ©‚éB
+	int playerLayer = p.GetLayer();
 	return IsGoalWorldPosition(playerLayer, p.getVECTOR().x, p.getVECTOR().z) && IsGameObjectGoalUnlocked();
 }
 
-Result::Result(int time, GameLaunchMode launchMode) : clearTime(time) ,launchMode(launchMode){
+Result::Result(int time, GameLaunchMode launchMode, GameResult result) : clearTime(time), launchMode(launchMode), result(result) {
 	Init();
 	SetMouseDispFlag(TRUE);
+}
+
+void Result::UISet() {
+	auto titleBtn = make_shared<Button>(Pos{ 400, 600 }, 150, 50);
+	titleBtn->SetOnClick([this]() {
+		changeflg = 1;
+		});
+
+	const char* exitLabel = launchMode == GameLaunchMode::EditorTestPlay ? "•ÒW‚É–ß‚é" : "ƒ^ƒCƒgƒ‹‚Ö";
+	auto title_text = make_shared<Label>(Pos{ 425, 620 }, 0, 0, exitLabel, BLACK, 16);
+
+	auto retryBtn = make_shared<Button>(Pos{ 700, 600 }, 150, 50);
+	retryBtn->SetOnClick([this]() {
+		changeflg = 2;
+		});
+
+	auto retry_text = make_shared<Label>(Pos{ 750, 620 }, 0, 0, "ƒŠƒgƒ‰ƒC", BLACK);
+
+	titleBtn->SetGroupId(1);
+	retryBtn->SetGroupId(1);
+
+	uiManager.Add(titleBtn);
+	uiManager.Add(title_text);
+	uiManager.Add(retryBtn);
+	uiManager.Add(retry_text);
 }
 
 void Result::Init() {
 	uiManager.Clear();
 	uiManager.SetScrollEnabled(false);
 
-	goalImg = LoadGraph(resultGOAL_image.path);
-	
+	switch (result) {
+	case GameResult::Win:
+		goalImg = LoadGraph(resultGOAL_image.path);
+		break;
+	case GameResult::Lose:
+		goalImg = LoadGraph(resultLose_image.path);
+		break;
+	}
+
 	totalTime = 0;
 	elapsed = 0;
 	minutes = 0;
@@ -632,42 +1126,44 @@ void Result::Init() {
 	totalTime = 0;
 	countTimer = 0;
 
-	auto titleBtn = make_shared<Button>(Pos{ 400, 600 }, 150, 50);
-	titleBtn->SetOnClick([this]() {
-		changeflg = 1;
-		});
+	first = false;
+	UISet();
 
-	const char* exitLabel = launchMode == GameLaunchMode::EditorTestPlay ? "ç·¨é›†ã«æˆ»ã‚‹" : "ã‚¿ã‚¤ãƒˆãƒ«ã¸";
-	auto title_text = make_shared<Label>(Pos{ 425, 620 }, 0, 0, exitLabel, BLACK, 16);
-
-	auto retryBtn = make_shared<Button>(Pos{ 700, 600 }, 150, 50);
-	retryBtn->SetOnClick([this]() {
-		changeflg = 2;
-		});
-
-	auto retry_text = make_shared<Label>(Pos{ 750, 620 }, 0, 0, "ãƒªãƒˆãƒ©ã‚¤", BLACK);
-
-	titleBtn->SetGroupId(1);
-	retryBtn->SetGroupId(1);
-
-	uiManager.Add(titleBtn);
-	uiManager.Add(title_text);
-	uiManager.Add(retryBtn);
-	uiManager.Add(retry_text);
 }
 
 void Result::Draw() {
-	DrawRotaGraph(WIDTH / 2, 50 + resultGOAL_image.h / 2, goalScale, 0.0, goalImg, true);
-	DrawFormatString(300, 400, WHITE, "CLEAR TIME : %02d:%02d", minutes, elapsed);
+	switch (result) {
+	case GameResult::Win:
+		DrawRotaGraph(WIDTH / 2, 50 + resultGOAL_image.h / 2, goalScale, 0.0, goalImg, true);
+		DrawFormatString(300, 400, WHITE, "CLEAR TIME : %02d:%02d", minutes, elapsed);
+		break;
+	case GameResult::Lose:
+		DrawRotaGraph(WIDTH / 2, HEIGHT / 2 - 50, 0.5f, 0.0, goalImg, true);
+		break;
+	}
+
 	uiManager.Draw();
 }
 
 void Result::Update(SceneManager& manager) {
+	if (!first) {
+		manager.GetSoundManager().Play("bgm3");
+		first = true;
+	}
+
 	uiManager.Update();
 
-	ScaleUpAnimation();
-	CountUp();
-	
+	switch (result) {
+	case GameResult::Win:
+		ScaleUpAnimation();
+		CountUp();
+		break;
+	case GameResult::Lose:
+
+		break;
+	}
+
+
 
 	switch (changeflg) {
 	case 1:
@@ -680,7 +1176,7 @@ void Result::Update(SceneManager& manager) {
 	case 2:
 		manager.GetSoundManager().Play("confirm");
 		manager.ChangeScene(
-			make_unique<Game>(),
+			make_unique<Game>(launchMode),
 			make_unique<Slide>()
 		);
 		break;
@@ -726,29 +1222,14 @@ void Result::CountUp() {
 	minutes = totalTime / 60000;
 }
 
-static bool IsEditorMapPosInRange(int layer, int z, int x)
-{
-	return layer >= 0 && layer < BLOCK_NUM_Y && z >= 0 && z < BLOCK_NUM_Z && x >= 0 && x < BLOCK_NUM_X;
-}
-static bool IsEditorMapStartGoalOnFloor()
-{
-	// 2026- 06-19
-	// : ã‚²ãƒ¼ãƒ é–‹å§‹æ™‚ã«è½ä¸‹/ç„¡åŠ¹ä½ç½®ã«ãªã‚‰ãªã„ã‚ˆã†ã€STARTã¨GOALã®è¶³å…ƒã«åºŠãŒã‚ã‚‹ã‹ç¢ºèªã™ã‚‹ãŸã‚è¿½åŠ ã€‚
-	return IsEditorMapPosInRange(startY, startZ, startX) &&
-		IsEditorMapPosInRange(goalY, goalZ, goalX) &&
-		FloorMap[startY][startZ][startX] >= 0 &&
-		FloorMap[goalY][goalZ][goalX] >= 0;
-}
+
 
 Create::Create() {
 	Init();
 }
 
-void Create::Init() {
-	SetMouseDispFlag(TRUE);
-	InitEditor();
-	goTitle = false;
-	// 2026-05-19: ã‚¨ãƒ‡ã‚£ã‚¿ãƒ¼ã®æˆ»ã‚‹ãƒœã‚¿ãƒ³ã¯å›ºå®šè¡¨ç¤ºã«ã—ãŸã„ã®ã§ã€ãƒ›ã‚¤ãƒ¼ãƒ«ã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«ã§å‹•ã‹ãªã„ã‚ˆã†ã«ã™ã‚‹ã€‚
+void Create::UISet() {
+	// 2026-05-19: ƒGƒfƒBƒ^[‚Ì–ß‚éƒ{ƒ^ƒ“‚ÍŒÅ’è•\¦‚É‚µ‚½‚¢‚Ì‚ÅAƒzƒC[ƒ‹ƒXƒNƒ[ƒ‹‚Å“®‚©‚È‚¢‚æ‚¤‚É‚·‚éB
 	uiManager.SetScrollEnabled(false);
 
 	auto titleBtn = make_shared<Button>(Pos{ 650, 10 }, 130, 36);
@@ -760,9 +1241,9 @@ void Create::Init() {
 		playCurrentMap = true;
 		});
 
-	auto playCurrentMapText = make_shared<Label>(Pos{ 500, 20 }, 0, 0, "ãƒ†ã‚¹ãƒˆãƒ—ãƒ¬ã‚¤", BLACK);
+	auto playCurrentMapText = make_shared<Label>(Pos{ 500, 20 }, 0, 0, "ƒeƒXƒgƒvƒŒƒC", BLACK);
 
-	auto titleText = make_shared<Label>(Pos{ 682, 20 }, 0, 0, "ã‚¿ã‚¤ãƒˆãƒ«", BLACK);
+	auto titleText = make_shared<Label>(Pos{ 682, 20 }, 0, 0, "–ß‚é", BLACK);
 
 	uiManager.Add(titleBtn);
 	uiManager.Add(titleText);
@@ -770,13 +1251,41 @@ void Create::Init() {
 	uiManager.Add(playCurrentMapText);
 }
 
+void Create::Init() {
+	first = false;
+
+	SetMouseDispFlag(TRUE);
+	InitEditor();
+	uiManager.Clear();
+	// 2026-07-15: •œ‹Œ‚ÉUISetŒÄ‚Ño‚µ‚ª”²‚¯AƒeƒXƒgƒvƒŒƒC/ƒ^ƒCƒgƒ‹ƒ{ƒ^ƒ“‚ª•\¦‚³‚ê‚È‚­‚È‚Á‚Ä‚¢‚½‚½‚ß–ß‚·B
+	UISet();
+	playCurrentMap = false;
+	playMapFloorWarning = false;
+	confirmSaveOnTitle = false;
+	goTitle = false;
+}
+
 void Create::Update(SceneManager& manager) {
+	if (!first) {
+		manager.GetSoundManager().Play("bgm9");
+		first = true;
+	}
+
+	if (playMapFloorWarning) {
+		// 2026-07-16: ƒeƒXƒgƒvƒŒƒC•s‰Â‚ÌŒx’†‚ÍƒGƒfƒBƒ^[‘€ì‚ğ~‚ßAƒL[“ü—Í‚Å•Â‚¶‚éB
+		if (Input::IsKeyTrigger(KEY_INPUT_RETURN) || Input::IsKeyTrigger(KEY_INPUT_SPACE) ||
+			Input::IsKeyTrigger(KEY_INPUT_C) || Input::IsKeyTrigger(KEY_INPUT_F9) ||
+			Input::IsKeyTrigger(KEY_INPUT_Y) || Input::IsKeyTrigger(KEY_INPUT_N)) {
+			playMapFloorWarning = false;
+		}
+		return;
+	}
 	if (confirmSaveOnTitle) {
-		// 2026-06-12: æœªä¿å­˜ã®ã¾ã¾ã‚¿ã‚¤ãƒˆãƒ«ã¸æˆ»ã‚‹æ™‚ã€ç·¨é›†å†…å®¹ã‚’ç ´æ£„ã—ã¦ã‚ˆã„ã‹ç¢ºèªã™ã‚‹ãŸã‚è¿½åŠ ã€‚
+		// 2026-06-12: –¢•Û‘¶‚Ì‚Ü‚Üƒ^ƒCƒgƒ‹‚Ö–ß‚éA•ÒW“à—e‚ğ”jŠü‚µ‚Ä‚æ‚¢‚©Šm”F‚·‚é‚½‚ß’Ç‰ÁB
 		if (Input::IsKeyTrigger(KEY_INPUT_Y)) {
 			ClearEditorMapDirty();
 			confirmSaveOnTitle = false;
-			manager.ChangeScene(make_unique<Title>(), make_unique<Slide>());
+			manager.ChangeScene(make_unique<Select>(), make_unique<Slide>());
 			return;
 		}
 		if (Input::IsKeyTrigger(KEY_INPUT_N) || Input::IsKeyTrigger(KEY_INPUT_C) || Input::IsKeyTrigger(KEY_INPUT_F9)) {
@@ -790,19 +1299,28 @@ void Create::Update(SceneManager& manager) {
 	uiManager.Update();
 
 	if (goTitle) {
-		// 2026-05-27: å¤‰æ›´ãŒã‚ã‚‹æ™‚ã¯ã€ã‚¿ã‚¤ãƒˆãƒ«ã¸æˆ»ã‚‹å‰ã«ä¿å­˜ç¢ºèªã‚’å‡ºã™ã€‚
-		// 2026-06-12: ä¿å­˜ã™ã‚‹ã‹ã§ã¯ãªãã€ä¿å­˜ã›ãšæˆ»ã‚‹ã‹ã®ç¢ºèªã«å¤‰æ›´ã€‚
+		// 2026-06-22: –¼‘O‚Æ‚©“ü—Í’†‚Í‹N“®‚µ‚È‚¢
+		if (IsEditorSaveInputActive()) {
+			goTitle = false;
+			return;
+		}
+		// 2026-05-27: •ÏX‚ª‚ ‚é‚ÍAƒ^ƒCƒgƒ‹‚Ö–ß‚é‘O‚É•Û‘¶Šm”F‚ğo‚·B
+		// 2026-06-12: •Û‘¶‚·‚é‚©‚Å‚Í‚È‚­A•Û‘¶‚¹‚¸–ß‚é‚©‚ÌŠm”F‚É•ÏXB
 		if (IsEditorMapDirty()) {
 			confirmSaveOnTitle = true;
 			goTitle = false;
 			return;
 		}
-		manager.ChangeScene(make_unique<Title>(), make_unique<Slide>());
+		manager.ChangeScene(make_unique<Select>(), make_unique<Slide>());
 		return;
 	}
 	if (playCurrentMap) {
-		// 2026-06-15: ã‚¨ãƒ‡ã‚£ã‚¿ãƒ¼ã¨ã‚²ãƒ¼ãƒ å‡¦ç†ã¯åˆ†ã‘ãŸã¾ã¾ã€ç¾åœ¨ã®ãƒãƒƒãƒ—ã‚’ä¿å­˜ã—ã¦Gameã‚·ãƒ¼ãƒ³ã¸æ¸¡ã™ãŸã‚è¿½åŠ ã€‚
+		// 2026-06-15: ƒGƒfƒBƒ^[‚ÆƒQ[ƒ€ˆ—‚Í•ª‚¯‚½‚Ü‚ÜAŒ»İ‚Ìƒ}ƒbƒv‚ğ•Û‘¶‚µ‚ÄGameƒV[ƒ“‚Ö“n‚·‚½‚ß’Ç‰ÁB
 		playCurrentMap = false;
+		// 2026-06-22: –¼‘O‚Æ‚©“ü—Í’†‚Í‹N“®‚µ‚È‚¢
+		if (IsEditorSaveInputActive()) {
+			return;
+		}
 		if (!IsEditorMapStartGoalOnFloor()) {
 			playMapFloorWarning = true;
 			return;
@@ -828,19 +1346,19 @@ void Create::Draw() {
 
 
 	if (playMapFloorWarning) {
-		// 2026-06-15: START/GOALãŒåºŠã®ä¸Šã«ãªã„æ™‚ã€ãƒ—ãƒ¬ã‚¤ã§ããªã„ç†ç”±ã‚’ç”»é¢ã«å‡ºã™ãŸã‚è¿½åŠ ã€‚
+		// 2026-06-15: START/GOAL‚ª°‚Ìã‚É‚È‚¢AƒvƒŒƒC‚Å‚«‚È‚¢——R‚ğ‰æ–Ê‚Éo‚·‚½‚ß’Ç‰ÁB
 		DrawBox(300, 250, 980, 420, GetColor(10, 10, 10), TRUE);
 		DrawBox(300, 250, 980, 420, GetColor(255, 255, 255), FALSE);
-		DrawString(330, 282, "ã‚¹ã‚¿ãƒ¼ãƒˆã¨ã‚´ãƒ¼ãƒ«ã¯åºŠã®ä¸Šã«ç½®ã„ã¦ãã ã•ã„ã€‚", GetColor(255, 255, 0));
-		DrawString(330, 320, "åºŠãŒãªã„å ´æ‰€ã‹ã‚‰ã¯ã€ã“ã®ãƒãƒƒãƒ—ã§éŠã¹ã¾ã›ã‚“ã€‚", GetColor(220, 240, 255));
-		DrawString(330, 360, "Enter/Space/C/F9: é–‰ã˜ã‚‹", GetColor(220, 240, 255));
+		DrawString(330, 282, "ƒXƒ^[ƒg‚ÆƒS[ƒ‹‚Í°‚Ìã‚É’u‚¢‚Ä‚­‚¾‚³‚¢B", GetColor(255, 255, 0));
+		DrawString(330, 320, "°‚ª‚È‚¢êŠ‚©‚ç‚ÍA‚±‚Ìƒ}ƒbƒv‚Å—V‚×‚Ü‚¹‚ñB", GetColor(220, 240, 255));
+		DrawString(330, 360, "Enter/Space/C/F9: •Â‚¶‚é", GetColor(220, 240, 255));
 	}
 	else if (confirmSaveOnTitle) {
-		// 2026-06-15: ã‚¿ã‚¤ãƒˆãƒ«ã¸æˆ»ã‚‹ç¢ºèªä¸­ã‚‚ã€è­¦å‘ŠãŒè¦‹ãˆã‚‹ã‚ˆã†æç”»ã‚’æˆ»ã™ã€‚
+		// 2026-06-15: ƒ^ƒCƒgƒ‹‚Ö–ß‚éŠm”F’†‚àAŒx‚ªŒ©‚¦‚é‚æ‚¤•`‰æ‚ğ–ß‚·B
 		DrawBox(300, 260, 980, 400, GetColor(10, 10, 10), TRUE);
 		DrawBox(300, 260, 980, 400, GetColor(255, 255, 255), FALSE);
-		DrawString(330, 292, "ä¿å­˜ã•ã‚Œã¦ã¾ã›ã‚“ã€‚ä¿å­˜ã›ãšæˆ»ã‚Šã¾ã™ã‹ï¼Ÿ", GetColor(255, 255, 0));
-		DrawString(330, 330, "Y: ä¿å­˜ã›ãšæˆ»ã‚‹   N/C/F9: ã‚­ãƒ£ãƒ³ã‚»ãƒ«", GetColor(220, 240, 255));
+		DrawString(330, 292, "•Û‘¶‚³‚ê‚Ä‚Ü‚¹‚ñB•Û‘¶‚¹‚¸–ß‚è‚Ü‚·‚©H", GetColor(255, 255, 0));
+		DrawString(330, 330, "Y: •Û‘¶‚¹‚¸–ß‚é   N/C/F9: ƒLƒƒƒ“ƒZƒ‹", GetColor(220, 240, 255));
 	}
 }
 
@@ -848,12 +1366,21 @@ OptionMenu::OptionMenu() {
 	Init();
 }
 
-void OptionMenu::Init() {
+void OptionMenu::UISet() {
 	optionUI.Init();
+}
+
+void OptionMenu::Init() {
+	first = false;
+	UISet();
 	SetMouseDispFlag(TRUE);
 }
 
 void OptionMenu::Update(SceneManager& manager) {
+	if (!first) {
+		manager.GetSoundManager().Play("bgm6");
+		first = true;
+	}
 	optionUI.SetSoundManager(&manager.GetSoundManager());
 	uiManager.SetSoundManager(&manager.GetSoundManager());
 	optionUI.Update();
@@ -869,3 +1396,6 @@ void OptionMenu::Update(SceneManager& manager) {
 void OptionMenu::Draw() {
 	optionUI.Draw();
 }
+
+
+
