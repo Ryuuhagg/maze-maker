@@ -1,6 +1,7 @@
 #include "MapLoader.h"
 #include "GameObjects.h"
 #include "Character.h"
+#include "CsvUtil.h"
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -162,33 +163,6 @@ static float RotToRad(int rot)
     return rot * 3.14159265f * 0.5f;
 }
 
-static vector<string> SplitCSV(const string& line)
-{
-    vector<string> result;
-    string item;
-    stringstream ss(line);
-
-    while (getline(ss, item, ','))
-    {
-        result.push_back(item);
-    }
-
-    return result;
-}
-
-bool IsGameMapPosValid(int y, int z, int x)
-{
-    return
-        y >= 0 && y < BLOCK_NUM_Y &&
-        z >= 0 && z < BLOCK_NUM_Z &&
-        x >= 0 && x < BLOCK_NUM_X;
-}
-
-static int WorldToCell(float value)
-{
-    return (int)floorf(value / BLOCK_SIZE);
-}
-
 static float Clamp01(float v)
 {
     if (v < 0.0f) return 0.0f;
@@ -266,7 +240,8 @@ int GetGameEventModelId(int eventId)
 
     return eventId;
 }
-
+
+
 static bool HasCsvValue(const vector<string>& cols, int index)
 {
     return index >= 0 && index < (int)cols.size() && !cols[index].empty() && cols[index] != "-";
@@ -410,7 +385,7 @@ static void GetClimbHintDirOffset(int dir, int& dx, int& dz)
 static bool IsClimbHintDirection(int y, int z, int x, int dir)
 {
     // 2026-07-16: 階段なしで上層へ行ける場所を伝えるため、0.5床から隣の上層床へ跳べる方向だけマークする。
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     if (!IsLowPlatformDecoId(GameDecoMap[y][z][x]))
@@ -423,7 +398,7 @@ static bool IsClimbHintDirection(int y, int z, int x, int dir)
     int upperLayer = y + 1;
     int targetX = x + dx;
     int targetZ = z + dz;
-    if (!IsGameMapPosValid(upperLayer, targetZ, targetX))
+    if (!IsMapPosValid(upperLayer, targetZ, targetX))
         return false;
 
     if (GameFloorMap[upperLayer][targetZ][targetX] < 0)
@@ -448,7 +423,7 @@ static bool HasClimbHintAtCell(int y, int z, int x)
 static bool IsClimbDownHintDirection(int y, int z, int x, int dir)
 {
     // 2026-07-16: 下り印は、0.5床と接続している上層床にだけ出す。
-    if (y <= 0 || !IsGameMapPosValid(y, z, x))
+    if (y <= 0 || !IsMapPosValid(y, z, x))
         return false;
 
     if (GameFloorMap[y][z][x] < 0)
@@ -466,7 +441,7 @@ static bool IsClimbDownHintDirection(int y, int z, int x, int dir)
     int lowerZ = z + dz;
     int lowerToUpperDir = (dir + 2) & 3;
 
-    if (!IsGameMapPosValid(lowerLayer, lowerZ, lowerX))
+    if (!IsMapPosValid(lowerLayer, lowerZ, lowerX))
         return false;
 
     if (!IsLowPlatformDecoId(GameDecoMap[lowerLayer][lowerZ][lowerX]))
@@ -489,7 +464,7 @@ static bool HasClimbDownHintAtCell(int y, int z, int x)
 static int GetManualCollisionEdgeScale(int y, int z, int x, int edge)
 {
     // 2026-05-11: 伸縮編集した辺当たり判定の長さ倍率を取得するため追加。
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return 100;
 
     return GameCollisionEdgeScaleMap[y][z][x][edge % 4];
@@ -498,7 +473,7 @@ static int GetManualCollisionEdgeScale(int y, int z, int x, int edge)
 static int GetManualCollisionEdgeThickness(int y, int z, int x, int edge)
 {
     // 2026-05-11: 厚さ編集した辺当たり判定の倍率を取得するため追加。
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return 100;
 
     return GameCollisionEdgeThicknessMap[y][z][x][edge % 4];
@@ -507,7 +482,7 @@ static int GetManualCollisionEdgeThickness(int y, int z, int x, int edge)
 static bool HasManualCollisionEdge(int y, int z, int x, int edge)
 {
     // 2026-05-11: 壁モデルとは別に、手動で置いた辺当たり判定を移動判定へ反映するため追加。
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return true;
 
     if (GameCollisionEdgeMap[y][z][x] < 0)
@@ -524,26 +499,26 @@ static bool HasManualCollisionEdge(int y, int z, int x, int edge)
 VECTOR GetStartPosition()
 {
     return VGet(
-        gameStartX * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        CellToWorldCenter(gameStartX),
         gameStartY * BLOCK_SIZE,
-        gameStartZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        CellToWorldCenter(gameStartZ)
     );
 }
 
 static VECTOR GetBlockCenterPosition(int x, int y, int z)
 {
     return VGet(
-        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        CellToWorldCenter(x),
         y * BLOCK_SIZE,
-        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        CellToWorldCenter(z)
     );
 }
 
 static VECTOR GetWallPosition(int x, int y, int z, int rot)
 {
-    float px = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float px = CellToWorldCenter(x);
     float py = y * BLOCK_SIZE;
-    float pz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float pz = CellToWorldCenter(z);
     // 2026-06-29: エディターの配置感に合わせ、壁モデルは選択したセルの辺に置く。
 
     switch (rot % 4)
@@ -752,7 +727,7 @@ void LoadGameMap()
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 GameFloorMap[y][z][x] = stoi(cols[3]);
                 GameFloorRot[y][z][x] = stoi(cols[4]);
@@ -766,7 +741,7 @@ void LoadGameMap()
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 GameWallMapA[y][z][x] = stoi(cols[3]);
                 GameWallRotA[y][z][x] = stoi(cols[4]);
@@ -780,7 +755,7 @@ void LoadGameMap()
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 GameWallMapB[y][z][x] = stoi(cols[3]);
                 GameWallRotB[y][z][x] = stoi(cols[4]);
@@ -794,7 +769,7 @@ void LoadGameMap()
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 GameCornerMap[y][z][x] = stoi(cols[3]);
                 GameCornerRot[y][z][x] = stoi(cols[4]);
@@ -812,7 +787,7 @@ void LoadGameMap()
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 GameDecoMap[y][z][x] = stoi(cols[3]);
                 GameDecoRot[y][z][x] = stoi(cols[4]);
@@ -826,7 +801,7 @@ void LoadGameMap()
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 // 2026-07-16: エディターで指定した0.5床の上層接続方向をゲーム側へ復元する。
                 GameClimbLinkMap[y][z][x] = stoi(cols[3]);
@@ -839,7 +814,7 @@ void LoadGameMap()
             int x = stoi(cols[2]);
 
             // 2026-05-11: エディターで置いた手動当たり判定をLoaderでも読むため追加。
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 GameCollisionMap[y][z][x] = stoi(cols[3]);
                 // 2026-05-20: 古いCSVではセルいっぱい、新しいCSVでは保存したBoxCollider風の形で復元する。
@@ -856,7 +831,7 @@ void LoadGameMap()
             int x = stoi(cols[2]);
 
             // 2026-05-11: 保存済みの辺単位当たり判定をLoaderでも読むため追加。
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 GameCollisionEdgeMap[y][z][x] = stoi(cols[3]);
                 // 2026-05-11: 辺当たり判定の伸縮値もLoaderで読むため追加。
@@ -873,7 +848,7 @@ void LoadGameMap()
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 int id = stoi(cols[3]);
                 // エネミー関連処理を一時停止中。旧EVENT ID 6は敵扱いなので読み込まない。
@@ -891,7 +866,7 @@ void LoadGameMap()
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsGameMapPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 // 2026-06-12: 新旧どちらのENEMY IDでもゲーム内では敵専用IDへ正規化する。
                 GameEnemyMap[y][z][x] = NormalizeGameEnemyId(stoi(cols[3]));
@@ -907,7 +882,7 @@ void LoadGameMap()
             int pointZ = stoi(cols[5]);
 
             // 2026-07-08: CSVの[PATROL]をゲーム側で復元し、Character側は配列を見るだけにする。
-            if (IsGameMapPosValid(enemyY, enemyZ, enemyX) && pointIndex >= 0 && pointIndex < ENEMY_PATROL_POINT_MAX &&
+            if (IsMapPosValid(enemyY, enemyZ, enemyX) && pointIndex >= 0 && pointIndex < ENEMY_PATROL_POINT_MAX &&
                 pointX >= 0 && pointX < BLOCK_NUM_X && pointZ >= 0 && pointZ < BLOCK_NUM_Z)
             {
                 EnemyPatrolXMap[enemyY][enemyZ][enemyX][pointIndex] = pointX;

@@ -34,9 +34,9 @@ VECTOR GetGameEnemyWorldPosition(int layer, int x, int z)
 {
     // 2026-06-12: ENEMYのセル座標を描画・攻撃判定で使うワールド座標へ変換するため追加。
     return VGet(
-        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        CellToWorldCenter(x),
         layer * BLOCK_SIZE + 80.0f,
-        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        CellToWorldCenter(z)
     );
 }
 
@@ -138,8 +138,8 @@ bool TrySpawnGameEnemyAtWorld(int enemyId, VECTOR pos)
 {
     // 2026-06-12: ワールド座標をセル座標へ変換して敵を生成できるよう追加。
     int layer = GetMapLayerFromWorldY(pos.y + BLOCK_SIZE * 0.5f);
-    int x = (int)floorf(pos.x / BLOCK_SIZE);
-    int z = (int)floorf(pos.z / BLOCK_SIZE);
+    int x = WorldToCell(pos.x);
+    int z = WorldToCell(pos.z);
     return TrySpawnGameEnemy(enemyId, layer, x, z);
 }
 
@@ -208,8 +208,8 @@ void UpdateGameEnemies(VECTOR playerPos, int playerLayer, bool& playerDamaged)
             DamagePlayer(playerDamaged);
         }
 
-        int x = (int)floorf(projectile.pos.x / BLOCK_SIZE);
-        int z = (int)floorf(projectile.pos.z / BLOCK_SIZE);
+        int x = WorldToCell(projectile.pos.x);
+        int z = WorldToCell(projectile.pos.z);
         if (x < 0 || x >= BLOCK_NUM_X || z < 0 || z >= BLOCK_NUM_Z)
         {
             projectile.active = false;

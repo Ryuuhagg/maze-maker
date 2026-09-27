@@ -14,7 +14,8 @@ static vector<string> SplitCollisionCSV(const string& line)
         cols.push_back(item);
     return cols;
 }
-
+
+
 static bool HasCsvValue(const vector<string>& cols, int index)
 {
     return index >= 0 && index < (int)cols.size() && !cols[index].empty() && cols[index] != "-";
@@ -119,8 +120,8 @@ static void PlaceEvent(int layer, int z, int x, int eventId)
 static int GetCollisionBoxDragMode(int layer, int z, int x, float worldX, float worldZ)
 {
     // 2026-07-21: 復元時、BoxCollider風編集のつかむ場所判定を戻す。
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetXMap[layer][z][x];
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetZMap[layer][z][x];
+    float cx = CellToWorldCenter(x) + CollisionBoxOffsetXMap[layer][z][x];
+    float cz = CellToWorldCenter(z) + CollisionBoxOffsetZMap[layer][z][x];
     float hw = CollisionBoxSizeXMap[layer][z][x] * 0.5f;
     float hd = CollisionBoxSizeZMap[layer][z][x] * 0.5f;
     float grab = 35.0f;
@@ -138,8 +139,8 @@ static void ApplyCollisionBoxDrag(int layer, int z, int x, int mode, float world
     if (layer < 0 || layer >= BLOCK_NUM_Y || z < 0 || z >= BLOCK_NUM_Z || x < 0 || x >= BLOCK_NUM_X)
         return;
 
-    float baseX = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float baseZ = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float baseX = CellToWorldCenter(x);
+    float baseZ = CellToWorldCenter(z);
     int minSize = 40;
     int maxSize = (int)BLOCK_SIZE;
 
@@ -167,8 +168,13 @@ static void ApplyCollisionBoxDrag(int layer, int z, int x, int mode, float world
 static void DrawManualCollisionBox(int layer, int z, int x, int color)
 {
     // 2026-07-21: 復元時、手動BOX当たり判定を3D線で確認できる表示を戻す。
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetXMap[layer][z][x];
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetZMap[layer][z][x];
+    float cx =
+        CellToWorldCenter(x) +
+        CollisionBoxOffsetXMap[layer][z][x];
+
+    float cz =
+        CellToWorldCenter(z) +
+        CollisionBoxOffsetZMap[layer][z][x];
     float yy = layer * BLOCK_SIZE + 26.0f;
     float hw = CollisionBoxSizeXMap[layer][z][x] * 0.5f;
     float hd = CollisionBoxSizeZMap[layer][z][x] * 0.5f;
@@ -283,17 +289,17 @@ static int GetEditorModelDrawRot(int tab, int id, int rot)
 static VECTOR GetBlockCenterPosition(int x, int y, int z)
 {
     return VGet(
-        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        CellToWorldCenter(x),
         y * BLOCK_SIZE,
-        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        CellToWorldCenter(z)
     );
 }
 
 static VECTOR GetWallPosition(int x, int y, int z, int rot)
 {
-    float px = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float px = CellToWorldCenter(x);
     float py = y * BLOCK_SIZE;
-    float pz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float pz = CellToWorldCenter(z);
 
     switch (rot & 3)
     {
@@ -516,8 +522,8 @@ static void DrawCollisionEdgeLine(int x, int y, int z, int rot, int scale, int t
     float front = z * BLOCK_SIZE;
     float back = (z + 1) * BLOCK_SIZE;
     float yy = y * BLOCK_SIZE + 18.0f;
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float cx = CellToWorldCenter(x);
+    float cz = CellToWorldCenter(z);
     float lenRate = scale / 100.0f;
 
     VECTOR a = VGet(cx, yy, cz);
@@ -546,8 +552,8 @@ static void DrawCollisionEdgeLine(int x, int y, int z, int rot, int scale, int t
 
 static void DrawCollisionBox(int x, int y, int z, float width, float depth, int color)
 {
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float cx = CellToWorldCenter(x);
+    float cz = CellToWorldCenter(z);
     float yy = y * BLOCK_SIZE + 20.0f;
     float hw = width * 0.5f;
     float hd = depth * 0.5f;
@@ -559,14 +565,14 @@ static void DrawCollisionBox(int x, int y, int z, float width, float depth, int 
 
 static void DrawCollisionCircle(int x, int y, int z, float radius, int color)
 {
-    VECTOR center = VGet(x * BLOCK_SIZE + BLOCK_SIZE * 0.5f, y * BLOCK_SIZE + 20.0f, z * BLOCK_SIZE + BLOCK_SIZE * 0.5f);
+    VECTOR center = VGet(CellToWorldCenter(x), y * BLOCK_SIZE + 20.0f, CellToWorldCenter(z));
     DrawSphere3D(center, max(8.0f, radius * 0.08f), 8, color, GetColor(255, 255, 255), TRUE);
 }
 
 static void DrawCollisionArc(int x, int y, int z, int rot, float radius, float thickness, int color)
 {
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float cx = CellToWorldCenter(x);
+    float cz = CellToWorldCenter(z);
     float yy = y * BLOCK_SIZE + 24.0f;
     DrawLine3D(VGet(cx - radius * 0.5f, yy, cz), VGet(cx + radius * 0.5f, yy, cz), color);
     DrawLine3D(VGet(cx, yy, cz - radius * 0.5f), VGet(cx, yy, cz + radius * 0.5f), color);

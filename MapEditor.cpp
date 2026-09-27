@@ -1,5 +1,6 @@
 #include "MapEditor.h"
 #include "Input.h"
+#include "CsvUtil.h"
 // #include "GameEnemies.h"
 #include <algorithm>
 #include <fstream>
@@ -324,14 +325,6 @@ int CollisionCornerOffsetMap[BLOCK_NUM_Y][BLOCK_NUM_Z][BLOCK_NUM_X];
 
 
 #pragma region ===== 共通判定 =====
-
-static bool IsMapPosValid(int layer, int z, int x)
-{
-    return
-        layer >= 0 && layer < BLOCK_NUM_Y &&
-        z >= 0 && z < BLOCK_NUM_Z &&
-        x >= 0 && x < BLOCK_NUM_X;
-}
 
 static bool IsHoverValid()
 {
@@ -724,6 +717,7 @@ static int GetEditorPlacementRot(int tab, int z, int x)
 
 #pragma region ===== マップ初期化 =====
 
+static bool ClearEditorCellAllKinds(int layer, int z, int x);
 void ClearCurrentLayer()
 {
     int layer = currentLayer;
@@ -735,51 +729,7 @@ void ClearCurrentLayer()
     {
         for (int x = 0; x < BLOCK_NUM_X; x++)
         {
-            FloorMap[layer][z][x] = -1;
-            FloorColorMap[layer][z][x] = 0;
-            WallMapA[layer][z][x] = -1;
-            WallColorMapA[layer][z][x] = 0;
-            WallMapB[layer][z][x] = -1;
-            WallColorMapB[layer][z][x] = 0;
-            CornerMap[layer][z][x] = -1;
-            CornerColorMap[layer][z][x] = 0;
-            DecoMap[layer][z][x] = -1;
-            DecoColorMap[layer][z][x] = 0;
-            ClimbLinkMap[layer][z][x] = 0;
-            EnemyMap[layer][z][x] = -1;
-            ClearEnemyPatrolPoints(layer, z, x);
-            if (EventMap[layer][z][x] == 0)
-            {
-                startX = -1; startY = -1; startZ = -1;
-            }
-            else if (EventMap[layer][z][x] == 1)
-            {
-                goalX = -1; goalY = -1; goalZ = -1;
-            }
-            EventMap[layer][z][x] = -1;
-            EventRot[layer][z][x] = 0;
-            // 2026-07-21: レイヤー削除後にEVENT回転だけ残ると、次の配置で向きが混ざるため初期化する。
-            // 2026-05-11: レイヤークリア時に手動当たり判定も消すため追加。
-            CollisionMap[layer][z][x] = -1;
-            // 2026-05-20: レイヤークリア時にBoxCollider風の調整値も標準値へ戻す。
-            ResetCollisionBox(layer, z, x);
-            // 2026-05-11: レイヤークリア時に辺当たり判定も消すため追加。
-            CollisionEdgeMap[layer][z][x] = -1;
-            for (int edge = 0; edge < 4; edge++)
-            {
-                CollisionEdgeScaleMap[layer][z][x][edge] = 100;
-                CollisionEdgeThicknessMap[layer][z][x][edge] = 100;
-
-                CollisionCornerScaleMap[layer][z][x] = 100;
-                CollisionCornerThicknessMap[layer][z][x] = 100;
-                CollisionCornerOffsetMap[layer][z][x] = 0;
-            }
-
-            FloorRot[layer][z][x] = 0;
-            WallRotA[layer][z][x] = 0;
-            WallRotB[layer][z][x] = 0;
-            CornerRot[layer][z][x] = 0;
-            DecoRot[layer][z][x] = 0;
+            ClearEditorCellAllKinds(layer, z, x);
         }
     }
 }
@@ -798,45 +748,7 @@ void ResetAllMap()
         {
             for (int x = 0; x < BLOCK_NUM_X; x++)
             {
-                FloorMap[y][z][x] = -1;
-                FloorColorMap[y][z][x] = 0;
-                WallMapA[y][z][x] = -1;
-                WallColorMapA[y][z][x] = 0;
-                WallMapB[y][z][x] = -1;
-                WallColorMapB[y][z][x] = 0;
-                CornerMap[y][z][x] = -1;
-                CornerColorMap[y][z][x] = 0;
-                DecoMap[y][z][x] = -1;
-                DecoColorMap[y][z][x] = 0;
-                ClimbLinkMap[y][z][x] = 0;
-                EnemyMap[y][z][x] = -1;
-                ClearEnemyPatrolPoints(y, z, x);
-                EventMap[y][z][x] = -1;
-                EventRot[y][z][x] = 0;
-                // 2026-07-21: 全消去/読込初期化時にEVENT回転の古い値を残さないため追加。
-                // 2026-05-11: 全体リセット時に手動当たり判定も初期化するため追加。
-                CollisionMap[y][z][x] = -1;
-                // 2026-05-20: 全体初期化時にBoxCollider風の調整値も標準値へ戻す。
-                ResetCollisionBox(y, z, x);
-                // 2026-05-11: 全体リセット時に辺当たり判定も初期化するため追加。
-                CollisionEdgeMap[y][z][x] = -1;
-                for (int edge = 0; edge < 4; edge++)
-                {
-                    CollisionEdgeScaleMap[y][z][x][edge] = 100;
-                    CollisionEdgeThicknessMap[y][z][x][edge] = 100;
-
-                    // 2026-05-13: 全消去/読込初期化時にコーナー当たり調整値の古い値を残さないため追加。
-                    CollisionCornerScaleMap[y][z][x] = 100;
-                    CollisionCornerThicknessMap[y][z][x] = 100;
-                    CollisionCornerOffsetMap[y][z][x] = 0;
-
-                }
-
-                FloorRot[y][z][x] = 0;
-                WallRotA[y][z][x] = 0;
-                WallRotB[y][z][x] = 0;
-                CornerRot[y][z][x] = 0;
-                DecoRot[y][z][x] = 0;
+                ClearEditorCellAllKinds(y, z, x);
             }
         }
     }
@@ -861,32 +773,105 @@ void ClearEditorMapDirty()
     editorMapDirty = false;
 }
 
-static void ClearEditorCellByTarget(int layer, int z, int x, int target)
+static int GetEraserTargetFromTab(int tab)
+{
+    switch (tab)
+    {
+    case FLOOR:
+        return ERASER_TARGET_FLOOR;
+
+    case WALL:
+        return ERASER_TARGET_WALL;
+
+    case CORNER:
+        return ERASER_TARGET_CORNER;
+
+    case DECO:
+        return ERASER_TARGET_DECO;
+
+    case ENEMY:
+        return ERASER_TARGET_ENEMY;
+
+    case EVENT:
+        return ERASER_TARGET_EVENT;
+
+    default:
+        return -1;
+    }
+}
+
+// この削除操作を実行したら、本当に何か消えるか？だけを判定する関数
+static bool CanClearEditorCellByTarget(int layer, int z, int x, int target)
 {
     if (!IsMapPosValid(layer, z, x))
-        return;
+        return false;
+
+    if (target == ERASER_TARGET_FLOOR)
+    {
+        return FloorMap[layer][z][x] >= 0;
+    }
+    else if (target == ERASER_TARGET_WALL)
+    {
+        int wallRot = GetEditorPlacementRot(WALL, z, x);
+
+        return
+            (WallMapA[layer][z][x] >= 0 &&
+                WallRotA[layer][z][x] == wallRot) ||
+            (WallMapB[layer][z][x] >= 0 &&
+                WallRotB[layer][z][x] == wallRot);
+    }
+    else if (target == ERASER_TARGET_CORNER)
+    {
+        return CornerMap[layer][z][x] >= 0;
+    }
+    else if (target == ERASER_TARGET_DECO)
+    {
+        return DecoMap[layer][z][x] >= 0;
+    }
+    else if (target == ERASER_TARGET_ENEMY)
+    {
+        return EnemyMap[layer][z][x] >= 0;
+    }
+    else if (target == ERASER_TARGET_EVENT)
+    {
+        return EventMap[layer][z][x] >= 0;
+    }
+
+    return false;
+}
+
+static bool ClearEditorCellByTarget(int layer, int z, int x, int target)
+{
+    if (!CanClearEditorCellByTarget(layer, z, x, target))
+        return false;
 
     if (target == ERASER_TARGET_FLOOR)
     {
         FloorMap[layer][z][x] = -1;
         FloorRot[layer][z][x] = 0;
         FloorColorMap[layer][z][x] = 0;
+
+        return true;
     }
     else if (target == ERASER_TARGET_WALL)
     {
         int wallRot = GetEditorPlacementRot(WALL, z, x);
+
         if (WallMapA[layer][z][x] >= 0 && WallRotA[layer][z][x] == wallRot)
         {
             WallMapA[layer][z][x] = -1;
             WallRotA[layer][z][x] = 0;
             WallColorMapA[layer][z][x] = 0;
         }
+
         if (WallMapB[layer][z][x] >= 0 && WallRotB[layer][z][x] == wallRot)
         {
             WallMapB[layer][z][x] = -1;
             WallRotB[layer][z][x] = 0;
             WallColorMapB[layer][z][x] = 0;
         }
+
+        return true;
     }
     else if (target == ERASER_TARGET_CORNER)
     {
@@ -896,6 +881,8 @@ static void ClearEditorCellByTarget(int layer, int z, int x, int target)
         CollisionCornerScaleMap[layer][z][x] = 100;
         CollisionCornerThicknessMap[layer][z][x] = 100;
         CollisionCornerOffsetMap[layer][z][x] = 0;
+
+        return true;
     }
     else if (target == ERASER_TARGET_DECO)
     {
@@ -903,17 +890,24 @@ static void ClearEditorCellByTarget(int layer, int z, int x, int target)
         DecoRot[layer][z][x] = 0;
         DecoColorMap[layer][z][x] = 0;
         ClimbLinkMap[layer][z][x] = 0;
+
+        return true;
     }
     else if (target == ERASER_TARGET_ENEMY)
     {
         EnemyMap[layer][z][x] = -1;
         ClearEnemyPatrolPoints(layer, z, x);
-        if (selectedPatrolEnemyLayer == layer && selectedPatrolEnemyX == x && selectedPatrolEnemyZ == z)
+
+        if (selectedPatrolEnemyLayer == layer &&
+            selectedPatrolEnemyX == x &&
+            selectedPatrolEnemyZ == z)
         {
             selectedPatrolEnemyLayer = -1;
             selectedPatrolEnemyX = -1;
             selectedPatrolEnemyZ = -1;
         }
+
+        return true;
     }
     else if (target == ERASER_TARGET_EVENT)
     {
@@ -929,15 +923,49 @@ static void ClearEditorCellByTarget(int layer, int z, int x, int target)
             goalY = -1;
             goalZ = -1;
         }
+
         EventMap[layer][z][x] = -1;
         EventRot[layer][z][x] = 0;
+
+        return true;
     }
+    return false;
 }
-static void ClearEditorCellAllKinds(int layer, int z, int x)
+
+static bool TryClearEditorCellByTarget(int layer, int z, int x, int target)
+{
+    if (!CanClearEditorCellByTarget(layer, z, x, target))
+        return false;
+
+    PushUndo();
+
+    return ClearEditorCellByTarget(layer, z, x, target);
+}
+
+static bool HasEditorCellContent(int layer, int z, int x)
+{
+    if (!IsMapPosValid(layer, z, x))
+        return false;
+
+    return
+        FloorMap[layer][z][x] >= 0 ||
+        WallMapA[layer][z][x] >= 0 ||
+        WallMapB[layer][z][x] >= 0 ||
+        CornerMap[layer][z][x] >= 0 ||
+        DecoMap[layer][z][x] >= 0 ||
+        EnemyMap[layer][z][x] >= 0 ||
+        EventMap[layer][z][x] >= 0 ||
+        CollisionMap[layer][z][x] >= 0 ||
+        CollisionEdgeMap[layer][z][x] >= 0;
+}
+
+static bool ClearEditorCellAllKinds(int layer, int z, int x)
 {
     // 2026-07-22: 消しゴムは現在選択中のタブに縛らず、同じマスの配置物をまとめて消せるようにする。
     if (!IsMapPosValid(layer, z, x))
-        return;
+        return false;
+
+    bool changed = HasEditorCellContent(layer, z, x);
 
     if (EventMap[layer][z][x] == 0)
     {
@@ -995,7 +1023,20 @@ static void ClearEditorCellAllKinds(int layer, int z, int x)
         CollisionEdgeScaleMap[layer][z][x][edge] = 100;
         CollisionEdgeThicknessMap[layer][z][x][edge] = 100;
     }
+
+    return changed;
 }
+
+static bool TryClearEditorCellAllKinds(int layer, int z, int x)
+{
+    if (!HasEditorCellContent(layer, z, x))
+        return false;
+
+    PushUndo();
+
+    return ClearEditorCellAllKinds(layer, z, x);
+}
+
 static void ClearPendingEditorLoad()
 {
     pendingLoadMapIndex = -1;
@@ -1178,16 +1219,6 @@ static const char* GetEditorKitBaseCsvPath()
     return "kitbase.csv";
 }
 
-static vector<string> SplitCsvLine(const string& line)
-{
-    vector<string> cols;
-    stringstream ss(line);
-    string item;
-    while (getline(ss, item, ','))
-        cols.push_back(item);
-    return cols;
-}
-
 static bool IsEditorKitNameListed(const char* kitName)
 {
     for (int i = 0; i < editorKitCount; i++)
@@ -1231,7 +1262,7 @@ void RefreshEditorKitList()
         string line;
         while (editorKitCount < EDITOR_KIT_LIST_MAX && getline(kitCsv, line))
         {
-            vector<string> cols = SplitCsvLine(line);
+            vector<string> cols = SplitCSV(line);
             if (cols.size() >= 2 && cols[0] == "KIT")
             {
                 strcpy_s(editorKitNameList[editorKitCount], sizeof(editorKitNameList[editorKitCount]), cols[1].c_str());
@@ -1374,14 +1405,6 @@ static void ResetEditorBaseKitCell(EditorBaseKitCell& cell)
     cell.cornerOffset = 0;
 }
 
-static bool IsEditorBaseKitPosValid(int y, int z, int x)
-{
-    return
-        y >= 0 && y < BLOCK_NUM_Y &&
-        z >= 0 && z < BLOCK_NUM_Z &&
-        x >= 0 && x < BLOCK_NUM_X;
-}
-
 bool RebuildEditorBaseKitCsv()
 {
     // 2026-06-26: kitbase.csvを編集した後、エディタ上の操作だけでキット.csvへ反映できるよう追加。
@@ -1418,7 +1441,7 @@ bool RebuildEditorBaseKitCsv()
             continue;
         }
 
-        vector<string> cols = SplitCsvLine(line);
+        vector<string> cols = SplitCSV(line);
         if (cols.empty() || cols[0] == "y" || cols[0] == "NAME" || cols[0] == "SIZE" || cols[0] == "START" || cols[0] == "GOAL")
             continue;
 
@@ -1446,7 +1469,7 @@ bool RebuildEditorBaseKitCsv()
         int y = stoi(cols[0]);
         int z = stoi(cols[1]);
         int x = stoi(cols[2]);
-        if (!IsEditorBaseKitPosValid(y, z, x))
+        if (!IsMapPosValid(y, z, x))
             continue;
 
         EditorBaseKitCell& cell = cells[y][z][x];
@@ -2049,7 +2072,7 @@ static bool LoadEditorKitToCopyBuffer(const char* kitName)
     string line;
     while (getline(ifs, line))
     {
-        vector<string> cols = SplitCsvLine(line);
+        vector<string> cols = SplitCSV(line);
         if (cols.empty())
             continue;
 
@@ -2954,8 +2977,8 @@ void UpdateEditor()
 
                 hoverWorldX = hit.x;
                 hoverWorldZ = hit.z;
-                hoverX = (int)floorf(hit.x / BLOCK_SIZE);
-                hoverZ = (int)floorf(hit.z / BLOCK_SIZE);
+                hoverX = WorldToCell(hit.x);
+                hoverZ = WorldToCell(hit.z);
             }
         }
     }
@@ -3353,83 +3376,42 @@ if (!pasteMode && !collisionEditMode && !isUI && canAccess && ctrl && lTrigger)
     bool eraserClick = eraserMode && (singlePlace || brushPlace);
     if (!pasteMode && !collisionEditMode && !selectMode && !shift && !isUI && !isEnemyPatrolEditing && (rTrigger || eraserClick) && canAccess)
     {
-        PushUndo();
+        bool changed = false;
 
         if (eraserMode)
         {
             if (eraserTarget == ERASER_TARGET_ALL)
-                ClearEditorCellAllKinds(layer, z, x);
+            {
+                if (HasEditorCellContent(layer, z, x))
+                {
+                    changed = TryClearEditorCellAllKinds(layer, z, x);
+                }
+            }
             else
-                ClearEditorCellByTarget(layer, z, x, eraserTarget);
+            {
+                changed = TryClearEditorCellByTarget(layer, z, x, eraserTarget);
+            }
+        }
+        else
+        {
+            int target = GetEraserTargetFromTab(currentTab);
+
+            if (currentTab == ENEMY)
+            {
+                if (EnemyMap[layer][z][x] == GetEditorEnemyIdFromModel(GetSelectedModel()))
+                {
+                    changed = TryClearEditorCellByTarget(layer, z, x, ERASER_TARGET_ENEMY);
+                }
+            }
+            else if (target >= 0)
+            {
+                changed = TryClearEditorCellByTarget(layer, z, x, target);
+            }
+        }
+
+        if (changed)
+        {
             MarkEditorMapDirty();
-        }
-        else if (currentTab == FLOOR)
-        {
-            FloorMap[layer][z][x] = -1;
-            FloorRot[layer][z][x] = 0;
-            FloorColorMap[layer][z][x] = 0;
-        }
-        else if (currentTab == WALL)
-        {
-            int wallRot = GetEditorPlacementRot(WALL, z, x);
-            // 2026-06-28: 壁グリッド上で右クリックした区間だけを消し、同じセルの別方向の壁を残す。
-            if (WallMapA[layer][z][x] >= 0 && WallRotA[layer][z][x] == wallRot)
-            {
-                WallMapA[layer][z][x] = -1;
-                WallRotA[layer][z][x] = 0;
-                WallColorMapA[layer][z][x] = 0;
-            }
-            if (WallMapB[layer][z][x] >= 0 && WallRotB[layer][z][x] == wallRot)
-            {
-                WallMapB[layer][z][x] = -1;
-                WallRotB[layer][z][x] = 0;
-                WallColorMapB[layer][z][x] = 0;
-            }
-        }
-        else if (currentTab == CORNER)
-        {
-            CornerMap[layer][z][x] = -1;
-            CornerRot[layer][z][x] = 0;
-            CornerColorMap[layer][z][x] = 0;
-            // 2026-05-13: コーナー削除時に当たり判定調整値も標準値へ戻すため追加。
-            CollisionCornerScaleMap[layer][z][x] = 100;
-            CollisionCornerThicknessMap[layer][z][x] = 100;
-            CollisionCornerOffsetMap[layer][z][x] = 0;
-        }
-        else if (currentTab == DECO)
-        {
-            DecoMap[layer][z][x] = -1;
-            ClimbLinkMap[layer][z][x] = 0;
-            DecoRot[layer][z][x] = 0;
-            DecoColorMap[layer][z][x] = 0;
-        }
-        else if (currentTab == ENEMY)
-        {
-            if (EnemyMap[layer][z][x] == GetEditorEnemyIdFromModel(GetSelectedModel()))
-            {
-                EnemyMap[layer][z][x] = -1;
-                ClearEnemyPatrolPoints(layer, z, x);
-                if (selectedPatrolEnemyLayer == layer && selectedPatrolEnemyX == x && selectedPatrolEnemyZ == z)
-                {
-                    selectedPatrolEnemyLayer = -1;
-                    selectedPatrolEnemyX = -1;
-                    selectedPatrolEnemyZ = -1;
-                }
-            }
-        }
-        else if (currentTab == EVENT)
-        {
-            if (EventMap[layer][z][x] == 0)
-                {
-                    startX = -1; startY = -1; startZ = -1;
-                }
-                else if (EventMap[layer][z][x] == 1)
-                {
-                    goalX = -1; goalY = -1; goalZ = -1;
-                }
-                EventMap[layer][z][x] = -1;
-                EventRot[layer][z][x] = 0;
-                // 2026-07-21: EVENT削除時に回転値だけ残ると、次の扉配置で古い向きが混ざるため初期化する。
         }
     }
 
@@ -3445,24 +3427,3 @@ if (!pasteMode && !collisionEditMode && !isUI && canAccess && ctrl && lTrigger)
 #pragma region ===== 描画 =====
 
 #include "MapEditorRendering.inl"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1,6 +1,6 @@
 static bool HasMiniMapContent(int y, int z, int x)
 {
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     return
@@ -14,7 +14,7 @@ static bool HasMiniMapContent(int y, int z, int x)
 static bool MiniMapHasLocalWallEdge(int y, int z, int x, int edge)
 {
     // 2026-06-28: HasWallEdgeは移動判定用に隣セルの壁も拾うため、ミニマップでは自セルに置かれた壁だけ描く。
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     int rot = edge & 3;
@@ -59,7 +59,7 @@ static void RevealMiniMapAroundPlayer(VECTOR playerPos, int layer)
         {
             int x = playerCellX + dx;
             int z = playerCellZ + dz;
-            if (IsGameMapPosValid(layer, z, x))
+            if (IsMapPosValid(layer, z, x))
                 GameMiniMapVisited[layer][z][x] = true;
         }
     }
@@ -197,7 +197,7 @@ void DrawMiniMap(VECTOR playerPos)
 
     auto DrawCellMarker = [&](int y, int z, int x, int color)
         {
-            if (y != layer || !IsGameMapPosValid(y, z, x) || !GameMiniMapVisited[y][z][x])
+            if (y != layer || !IsMapPosValid(y, z, x) || !GameMiniMapVisited[y][z][x])
                 return;
             int cx = MiniMapPosX(mapX, cellSize, x + 0.5f);
             int cy = MiniMapPosY(mapY, cellSize, z + 0.5f);

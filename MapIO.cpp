@@ -1,6 +1,7 @@
 #include "MapEditor.h"
 #include "Constant.h"
 #include "DxLib.h"
+#include "CsvUtil.h"
 #include <fstream>
 #include <string>
 #include <vector>
@@ -11,36 +12,6 @@ void RefreshMapNameList();
 using namespace std;
 
 #pragma region  共通 
-
-static vector<string> SplitCSV(const string& line)
-{
-    vector<string> result;
-    string item;
-
-    for (char c : line)
-    {
-        if (c == ',')
-        {
-            result.push_back(item);
-            item.clear();
-        }
-        else
-        {
-            item += c;
-        }
-    }
-
-    result.push_back(item);
-    return result;
-}
-
-static bool IsSaveLoadPosValid(int y, int z, int x)
-{
-    return
-        y >= 0 && y < BLOCK_NUM_Y &&
-        z >= 0 && z < BLOCK_NUM_Z &&
-        x >= 0 && x < BLOCK_NUM_X;
-}
 
 static bool IsEnemyEventIdForCsv(int id)
 {
@@ -71,7 +42,7 @@ static void ClearEventIdForSave(int eventId)
 static void SyncEventMarkersFromStartGoal()
 {
     // 2026-05-13: START/GOAL座標と[EVENT]保存内容がズレないよう、保存直前に同期するため追加。
-    if (IsSaveLoadPosValid(startY, startZ, startX))
+    if (IsMapPosValid(startY, startZ, startX))
     {
         ClearEventIdForSave(0);
         EventMap[startY][startZ][startX] = 0;
@@ -79,7 +50,7 @@ static void SyncEventMarkersFromStartGoal()
         // 2026-07-21: STARTは向きを使わないため、保存直前同期では回転を標準に戻す。
     }
 
-    if (IsSaveLoadPosValid(goalY, goalZ, goalX))
+    if (IsMapPosValid(goalY, goalZ, goalX))
     {
         ClearEventIdForSave(1);
         EventMap[goalY][goalZ][goalX] = 1;
@@ -460,7 +431,7 @@ char fileName[260];
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 FloorMap[y][z][x] = stoi(cols[3]);
                 FloorRot[y][z][x] = stoi(cols[4]);
@@ -474,7 +445,7 @@ char fileName[260];
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 WallMapA[y][z][x] = stoi(cols[3]);
                 WallRotA[y][z][x] = stoi(cols[4]);
@@ -488,7 +459,7 @@ char fileName[260];
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 WallMapB[y][z][x] = stoi(cols[3]);
                 WallRotB[y][z][x] = stoi(cols[4]);
@@ -502,7 +473,7 @@ char fileName[260];
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 CornerMap[y][z][x] = stoi(cols[3]);
                 CornerRot[y][z][x] = stoi(cols[4]);
@@ -528,7 +499,7 @@ char fileName[260];
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 DecoMap[y][z][x] = stoi(cols[3]);
                 DecoRot[y][z][x] = stoi(cols[4]);
@@ -542,7 +513,7 @@ char fileName[260];
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 // 2026-07-16: 保存済みの0.5床の上層接続方向を復元する。
                 ClimbLinkMap[y][z][x] = stoi(cols[3]);
@@ -555,7 +526,7 @@ char fileName[260];
             int x = stoi(cols[2]);
 
             // 2026-05-13: 保存済みのセル当たり判定をエディターへ復元するため追加。
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 CollisionMap[y][z][x] = stoi(cols[3]);
                 // 2026-05-20: 古いCSVではセルいっぱい、新しいCSVでは保存したBoxCollider風の形で復元する。
@@ -571,7 +542,7 @@ char fileName[260];
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 CollisionEdgeMap[y][z][x] = stoi(cols[3]);
 
@@ -591,7 +562,7 @@ char fileName[260];
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 int id = stoi(cols[3]);
                 if (IsEnemyEventIdForCsv(id))
@@ -613,7 +584,7 @@ char fileName[260];
             int z = stoi(cols[1]);
             int x = stoi(cols[2]);
 
-            if (IsSaveLoadPosValid(y, z, x))
+            if (IsMapPosValid(y, z, x))
             {
                 // 2026-06-12: 新旧どちらのENEMY IDでも内部は敵専用IDへ正規化する。
               EnemyMap[y][z][x] = NormalizeEnemyIdForCsv(stoi(cols[3]));
@@ -629,7 +600,7 @@ char fileName[260];
             int pointZ = stoi(cols[5]);
 
             // 2026-07-08: 保存済みの敵ごとの巡回ポイントをエディターへ復元する。
-            if (IsSaveLoadPosValid(enemyY, enemyZ, enemyX) && pointIndex >= 0 && pointIndex < ENEMY_PATROL_POINT_MAX &&
+            if (IsMapPosValid(enemyY, enemyZ, enemyX) && pointIndex >= 0 && pointIndex < ENEMY_PATROL_POINT_MAX &&
                 pointX >= 0 && pointX < BLOCK_NUM_X && pointZ >= 0 && pointZ < BLOCK_NUM_Z)
             {
                 EnemyPatrolXMap[enemyY][enemyZ][enemyX][pointIndex] = pointX;

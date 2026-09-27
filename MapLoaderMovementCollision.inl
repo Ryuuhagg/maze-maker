@@ -1,6 +1,6 @@
 static bool IsWalkableCell(int y, int z, int x)
 {
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     if (GameFloorMap[y][z][x] >= 0)
@@ -59,12 +59,12 @@ static bool IsGameCornerWallPairEdge(int rot, int edge)
 }
 bool HasWallEdge(int y, int z, int x, int edge)
 {
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return true;
 
     auto HasLocalWall = [&](int cy, int cz, int cx, int rot)
         {
-            if (!IsGameMapPosValid(cy, cz, cx))
+            if (!IsMapPosValid(cy, cz, cx))
                 return false;
 
             if (GameWallMapA[cy][cz][cx] >= 0 &&
@@ -171,7 +171,7 @@ static bool IsStairsAtWorldInLayer(int y, float worldX, float worldZ)
     int x = WorldToCell(worldX);
     int z = WorldToCell(worldZ);
 
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     return IsStairsId(GameDecoMap[y][z][x]);
@@ -288,7 +288,7 @@ static bool CircleHitArc(float worldX, float worldZ, float playerRadius, int x, 
 }
 static bool IsPointInsideLowPlatformCell(int y, int z, int x, float worldX, float worldZ)
 {
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     int decoId = GameDecoMap[y][z][x];
@@ -299,8 +299,8 @@ static bool IsPointInsideLowPlatformCell(int y, int z, int x, float worldX, floa
     if (info.type != COLL_BOX)
         return false;
 
-    float bx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float bz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float bx = CellToWorldCenter(x);
+    float bz = CellToWorldCenter(z);
 
     return
         worldX >= bx - info.width &&
@@ -326,7 +326,7 @@ static float GetVisibleBlockBottomY(int y, float topOffset, float height)
 
 static bool IsCircleOnLowPlatformCell(int y, int z, int x, float worldX, float worldZ, float radius)
 {
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     int decoId = GameDecoMap[y][z][x];
@@ -337,8 +337,8 @@ static bool IsCircleOnLowPlatformCell(int y, int z, int x, float worldX, float w
     if (info.type != COLL_BOX)
         return false;
 
-    float bx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float bz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float bx = CellToWorldCenter(x);
+    float bz = CellToWorldCenter(z);
 
     return CircleHitBox(worldX, worldZ, radius, bx, bz, info.width, info.depth);
 }
@@ -404,7 +404,7 @@ static bool FindOverheadFloorAtWorld(int y, float worldX, float worldZ)
             int x = cellX + dx;
             int z = cellZ + dz;
 
-            if (!IsGameMapPosValid(y - 1, z, x))
+            if (!IsMapPosValid(y - 1, z, x))
                 continue;
 
             if (IsOverheadDecoId(GameDecoMap[y - 1][z][x]) &&
@@ -426,7 +426,7 @@ static bool IsWalkableAtWorld(int y, float worldX, float worldZ)
     if (IsWalkableCell(y, z, x))
         return true;
 
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     // 1つ下の階に置いた装飾7は、今の階の床として扱う。
@@ -472,7 +472,7 @@ static bool IsSolidDecoId(int id)
 
 static bool IsSolidCell(int y, int z, int x)
 {
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return true;
 
     // 2026-05-11: エディターで手動設定したセル当たり判定を移動判定へ反映するため追加。
@@ -543,15 +543,15 @@ static bool HitMapObjects(
             int x = cellX + dx;
             int z = cellZ + dz;
 
-            if (!IsGameMapPosValid(y, z, x))
+            if (!IsMapPosValid(y, z, x))
                 continue;
 
             // 2026-05-11: 手動当たり判定セルは、プレイヤー半径とセル矩形の接触で止めるため追加。
             if (GameCollisionMap[y][z][x] >= 0)
             {
                 // 2026-05-20: セル全体ではなく、エディターで直接触って調整したBoxCollider風の範囲で止める。
-                float boxCenterX = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + GameCollisionBoxOffsetXMap[y][z][x];
-                float boxCenterZ = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + GameCollisionBoxOffsetZMap[y][z][x];
+                float boxCenterX = CellToWorldCenter(x) + GameCollisionBoxOffsetXMap[y][z][x];
+                float boxCenterZ = CellToWorldCenter(z) + GameCollisionBoxOffsetZMap[y][z][x];
                 float halfX = max(20.0f, GameCollisionBoxSizeXMap[y][z][x] * 0.5f);
                 float halfZ = max(20.0f, GameCollisionBoxSizeZMap[y][z][x] * 0.5f);
 
@@ -729,8 +729,8 @@ static bool HitMapObjects(
                 // 2026-05-20: コーナーもモデルごとのBOX/CIRCLE指定を優先し、未指定の時だけ従来の斜め線判定を使う。
                 if (cornerInfo.type == COLL_CIRCLE)
                 {
-                    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-                    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                    float cx = CellToWorldCenter(x);
+                    float cz = CellToWorldCenter(z);
                     if (CircleHitCircle(worldX, worldZ, radius, cx, cz, cornerInfo.radius))
                         return true;
 
@@ -738,8 +738,8 @@ static bool HitMapObjects(
                 }
                 else if (cornerInfo.type == COLL_BOX)
                 {
-                    float bx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-                    float bz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                    float bx = CellToWorldCenter(x);
+                    float bz = CellToWorldCenter(z);
                     if (CircleHitBox(worldX, worldZ, radius, bx, bz, cornerInfo.width, cornerInfo.depth))
                         return true;
 
@@ -847,8 +847,8 @@ static bool HitMapObjects(
                     float platformTopY = GetVisibleBlockTopY(y, GetLowPlatformTopOffset());
                     float platformBottomY = GetVisibleBlockBottomY(y, GetLowPlatformTopOffset(), LOW_PLATFORM_VISIBLE_THICKNESS);
                     CollisionInfo& info = collisionTable[decoId];
-                    float bx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-                    float bz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                    float bx = CellToWorldCenter(x);
+                    float bz = CellToWorldCenter(z);
 
                     if (currentY >= platformBottomY - 1.0f && currentY < platformTopY + 1.0f &&
                         CircleHitBox(worldX, worldZ, radius, bx, bz, info.width, info.depth))
@@ -887,10 +887,10 @@ static bool HitMapObjects(
                 if (info.type == COLL_CIRCLE)
                 {
                     float cx =
-                        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                        CellToWorldCenter(x);
 
                     float cz =
-                        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                        CellToWorldCenter(z);
 
                     if (CircleHitCircle(
                         worldX,
@@ -906,10 +906,10 @@ static bool HitMapObjects(
                 else if (info.type == COLL_BOX)
                 {
                     float bx =
-                        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                        CellToWorldCenter(x);
 
                     float bz =
-                        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                        CellToWorldCenter(z);
 
                     if (CircleHitBox(
                         worldX,
@@ -1058,7 +1058,7 @@ static bool GetStairsProgressInLayer(int y, float worldX, float worldZ, float& p
     int x = WorldToCell(worldX);
     int z = WorldToCell(worldZ);
 
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     if (!IsStairsId(GameDecoMap[y][z][x]))
@@ -1194,7 +1194,7 @@ static bool CanStandPlayerPosition(
 
 bool CanCameraMoveWorldPosition(int y, float worldX, float worldZ, float radius, float currentY)
 {
-    if (!IsGameMapPosValid(y, WorldToCell(worldZ), WorldToCell(worldX)))
+    if (!IsMapPosValid(y, WorldToCell(worldZ), WorldToCell(worldX)))
         return true;
 
     // 2026-07-13: カメラは床の上を歩く物体ではないので、床セル外でも壁・装飾に当たらなければ通す。
@@ -1292,7 +1292,7 @@ static bool IsCircleTouchingFloorCell(int y, float worldX, float worldZ, float r
         {
             int x = cellX + dx;
             int z = cellZ + dz;
-            if (!IsGameMapPosValid(y, z, x))
+            if (!IsMapPosValid(y, z, x))
                 continue;
 
             bool hasFloor = GameFloorMap[y][z][x] >= 0;
@@ -1317,7 +1317,7 @@ static bool IsPointUnderFloorCell(int y, float worldX, float worldZ)
 {
     int x = WorldToCell(worldX);
     int z = WorldToCell(worldZ);
-    if (!IsGameMapPosValid(y, z, x))
+    if (!IsMapPosValid(y, z, x))
         return false;
 
     if (GameFloorMap[y][z][x] >= 0)
@@ -1339,7 +1339,7 @@ static bool IsLowerClimbHintLandingCell(int currentLayer, float worldX, float wo
     int lowerLayer = currentLayer - 1;
     int x = WorldToCell(worldX);
     int z = WorldToCell(worldZ);
-    if (!IsGameMapPosValid(lowerLayer, z, x))
+    if (!IsMapPosValid(lowerLayer, z, x))
         return false;
 
     for (int dir = 0; dir < 4; dir++)
@@ -1352,7 +1352,7 @@ static bool IsLowerClimbHintLandingCell(int currentLayer, float worldX, float wo
         GetClimbHintDirOffset(dir, dx, dz);
         int upperX = x + dx;
         int upperZ = z + dz;
-        if (IsGameMapPosValid(currentLayer, upperZ, upperX) && GameFloorMap[currentLayer][upperZ][upperX] >= 0)
+        if (IsMapPosValid(currentLayer, upperZ, upperX) && GameFloorMap[currentLayer][upperZ][upperX] >= 0)
             return true;
     }
 
@@ -1527,7 +1527,7 @@ static bool TryClimbToUpperFloorFromHalfStep(VECTOR& pos, float& jumpY, float& v
 
     int x = WorldToCell(pos.x);
     int z = WorldToCell(pos.z);
-    if (!IsGameMapPosValid(baseLayer, z, x))
+    if (!IsMapPosValid(baseLayer, z, x))
         return false;
 
     float upperGroundY = (baseLayer + 1) * BLOCK_SIZE;
@@ -1551,8 +1551,8 @@ static bool TryClimbToUpperFloorFromHalfStep(VECTOR& pos, float& jumpY, float& v
         int targetZ = z + dz;
         int upperLayer = baseLayer + 1;
 
-        float targetXWorld = targetX * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-        float targetZWorld = targetZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        float targetXWorld = CellToWorldCenter(targetX);
+        float targetZWorld = CellToWorldCenter(targetZ);
         if (!CanStandPlayerPosition(upperLayer, targetXWorld, targetZWorld, groundRadius, upperGroundY))
             continue;
 
@@ -1578,7 +1578,7 @@ static bool TryStepDownToLowerHalfStep(VECTOR& pos, float& jumpY, float& vy, boo
 
     int upperX = WorldToCell(pos.x);
     int upperZ = WorldToCell(pos.z);
-    if (!IsGameMapPosValid(layer, upperZ, upperX))
+    if (!IsMapPosValid(layer, upperZ, upperX))
         return false;
 
     for (int dir = 0; dir < 4; dir++)
@@ -1601,8 +1601,8 @@ static bool TryStepDownToLowerHalfStep(VECTOR& pos, float& jumpY, float& vy, boo
         int lowerLayer = layer - 1;
         int lowerX = upperX + dx;
         int lowerZ = upperZ + dz;
-        float targetXWorld = lowerX * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-        float targetZWorld = lowerZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        float targetXWorld = CellToWorldCenter(lowerX);
+        float targetZWorld = CellToWorldCenter(lowerZ);
 
         if (!FindLowPlatformAtWorld(lowerLayer, targetXWorld, targetZWorld, groundRadius))
             continue;
@@ -1806,7 +1806,7 @@ bool GetLayerMoveDestination(
         int nextX = currentX + dx;
         int nextZ = currentZ + dz;
 
-        if (!IsGameMapPosValid(nextLayer, nextZ, nextX))
+        if (!IsMapPosValid(nextLayer, nextZ, nextX))
             return false;
 
         if (!IsWalkableCell(nextLayer, nextZ, nextX))
@@ -1832,7 +1832,7 @@ bool GetLayerMoveDestination(
         int nextX = currentX + dx;
         int nextZ = currentZ + dz;
 
-        if (!IsGameMapPosValid(nextLayer, nextZ, nextX))
+        if (!IsMapPosValid(nextLayer, nextZ, nextX))
             return false;
 
         if (!IsLowPlatformDecoId(

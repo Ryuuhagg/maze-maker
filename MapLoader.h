@@ -75,6 +75,4 @@ bool GetLayerMoveDestination(
     int direction,
     MapNode& destination);
 
-// 7/17 BFS‚Ég‚¤‚½‚ß‚É‚±‚±‚ÅéŒ¾  
-bool IsGameMapPosValid(int y, int z, int x);
 

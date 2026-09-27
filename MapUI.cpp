@@ -525,10 +525,14 @@ static bool IsSelectedCollisionValid()
 {
     // 2026-05-20: 右側パネルで操作できるBOXコライダーが選択されているか確認する。
     return
-        selectedCollisionLayer >= 0 && selectedCollisionLayer < BLOCK_NUM_Y &&
-        selectedCollisionZ >= 0 && selectedCollisionZ < BLOCK_NUM_Z &&
-        selectedCollisionX >= 0 && selectedCollisionX < BLOCK_NUM_X &&
-        CollisionMap[selectedCollisionLayer][selectedCollisionZ][selectedCollisionX] >= 0;
+        IsMapPosValid(
+            selectedCollisionLayer,
+            selectedCollisionZ,
+            selectedCollisionX
+        ) &&
+        CollisionMap[selectedCollisionLayer]
+        [selectedCollisionZ]
+        [selectedCollisionX] >= 0;
 }
 
 static void AdjustSelectedCollisionBox(int offsetX, int offsetZ, int sizeX, int sizeZ)
@@ -569,8 +573,8 @@ static void AdjustSelectedCollisionBoxFromPreview(int mx, int my)
     float worldX = x * BLOCK_SIZE + localX * BLOCK_SIZE;
     float worldZ = z * BLOCK_SIZE + localZ * BLOCK_SIZE;
 
-    float centerX = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetXMap[y][z][x];
-    float centerZ = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + CollisionBoxOffsetZMap[y][z][x];
+    float centerX = CellToWorldCenter(x) + CollisionBoxOffsetXMap[y][z][x];
+    float centerZ = CellToWorldCenter(z) + CollisionBoxOffsetZMap[y][z][x];
     float halfX = max(20.0f, CollisionBoxSizeXMap[y][z][x] * 0.5f);
     float halfZ = max(20.0f, CollisionBoxSizeZMap[y][z][x] * 0.5f);
     float left = centerX - halfX;
@@ -605,8 +609,8 @@ static void AdjustSelectedCollisionBoxFromPreview(int mx, int my)
         bottom = worldZ + halfZ;
     }
 
-    float cellCenterX = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cellCenterZ = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float cellCenterX = CellToWorldCenter(x);
+    float cellCenterZ = CellToWorldCenter(z);
     CollisionBoxOffsetXMap[y][z][x] = (int)(((left + right) * 0.5f) - cellCenterX);
     CollisionBoxOffsetZMap[y][z][x] = (int)(((top + bottom) * 0.5f) - cellCenterZ);
     CollisionBoxSizeXMap[y][z][x] = max(40, (int)(right - left));

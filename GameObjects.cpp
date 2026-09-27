@@ -29,9 +29,9 @@ static VECTOR GetEventWorldPosition(int layer, int x, int z)
 {
     // 2026-06-02: EVENTのセル座標を、描画と接触判定で使うワールド座標へ変換するため追加。
     return VGet(
-        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        CellToWorldCenter(x),
         layer * BLOCK_SIZE + 80.0f,
-        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        CellToWorldCenter(z)
     );
 }
 
@@ -155,9 +155,9 @@ static void DrawGameEventModelHandle(int modelHandle, int layer, int x, int z, i
 {
     // 2026-07-21: 閉じ扉/開き扉の両方を同じ座標と回転で描けるよう、EVENTモデル描画を共通化する。
     VECTOR modelPos = VGet(
-        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        CellToWorldCenter(x),
         layer * BLOCK_SIZE + 8.0f,
-        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        CellToWorldCenter(z)
     );
     if (adjustLockedDoor)
     {
@@ -661,8 +661,8 @@ bool HitActiveLockedDoorObject(int checkLayer, float worldX, float worldZ, float
             continue;
 
         VECTOR pos = gameObjects[i]->GetWorldPosition();
-        int cellX = (int)(pos.x / BLOCK_SIZE);
-        int cellZ = (int)(pos.z / BLOCK_SIZE);
+        int cellX = WorldToCell(pos.x);
+        int cellZ = WorldToCell(pos.z);
         if (HitLockedDoorWallLine(cellX, cellZ, gameObjects[i]->GetRot(), worldX, worldZ, radius))
         {
             // 2026-07-22: 扉の移動阻止も壁と同じセル端ラインで行い、丸判定のズレをなくす。
@@ -727,9 +727,9 @@ VECTOR GetGameRespawnPosition()
     if (gameCheckpointActivated)
     {
         return VGet(
-            gameCheckpointX * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+            CellToWorldCenter(gameCheckpointX),
             gameCheckpointLayer * BLOCK_SIZE,
-            gameCheckpointZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+            CellToWorldCenter(gameCheckpointZ)
         );
     }
 

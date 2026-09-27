@@ -1,5 +1,6 @@
 #pragma once
 #include "DxLib.h"
+#include <cmath>
 
 /// <summary>
 /// このスクリプトはEditorとゲームに表示するための2つで必要となるためずっとオン
@@ -246,7 +247,27 @@ extern int goalZ;
 #pragma region ===== 共通関数 =====
 
 int GetSelectedModel();
-
+// 9/22追加
+// マップ座標の範囲チェックの処理を1つにまとめた
+inline bool IsMapPosValid(int y, int z, int x)
+{
+    return
+        y >= 0 && y < BLOCK_NUM_Y &&
+        z >= 0 && z < BLOCK_NUM_Z &&
+        x >= 0 && x < BLOCK_NUM_X;
+}
+// 9/22追加
+// ワールド座標からマップ座標に変換する関数
+inline int WorldToCell(float worldPos)
+{
+    return (int)std::floorf(worldPos / BLOCK_SIZE);
+}
+// 9/22追加
+// マップ座標からワールド座標に変換する関数
+inline float CellToWorldCenter(int cell)
+{
+    return cell * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+}
 #pragma endregion
 
 

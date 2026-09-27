@@ -143,9 +143,9 @@ static void DrawEditorClimbHintEdge(int x, int y, int z, int dir, float opacity)
     GetEditorClimbHintDirOffset(dir, dx, dz);
 
     VECTOR pos = VGet(
-        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + dx * BLOCK_SIZE * 0.42f,
-        y * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
-        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + dz * BLOCK_SIZE * 0.42f
+        CellToWorldCenter(x) + dx * BLOCK_SIZE * 0.42f,
+        CellToWorldCenter(y),
+        CellToWorldCenter(z) + dz * BLOCK_SIZE * 0.42f
     );
     pos = ApplyEditorModelConfigOffset(DECO, ladderModelId, pos);
 
@@ -227,8 +227,8 @@ static void DrawEditorEnemyMarker(int layer, int z, int x, int enemyId)
 
 static void DrawEditorPatrolPointMarker(int layer, int z, int x, int color)
 {
-    float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float cx = CellToWorldCenter(x);
+    float cz = CellToWorldCenter(z);
     float y = layer * BLOCK_SIZE + 72.0f;
     float half = BLOCK_SIZE * 0.11f;
     // 2026-07-22: 巡回ポイントは実体モデルではないため、小さい箱マーカーで配置位置だけ見せる。
@@ -263,8 +263,8 @@ static void DrawEditorAllEnemyPatrolMarkers()
                 int lineColor = selected ? GetColor(80, 220, 255) : GetColor(70, 150, 190);
                 int pointColor = selected ? GetColor(80, 220, 255) : GetColor(80, 170, 210);
                 float lineY = layer * BLOCK_SIZE + 112.0f;
-                float lastX = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-                float lastZ = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                float lastX = CellToWorldCenter(x);
+                float lastZ = CellToWorldCenter(z);
 
                 for (int i = 0; i < count; i++)
                 {
@@ -273,8 +273,8 @@ static void DrawEditorAllEnemyPatrolMarkers()
                     if (!IsMapPosValid(layer, pz, px))
                         continue;
 
-                    float toX = px * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-                    float toZ = pz * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                    float toX = CellToWorldCenter(px);
+                    float toZ = CellToWorldCenter(pz);
                     DrawLine3D(VGet(lastX, lineY, lastZ), VGet(toX, lineY, toZ), lineColor);
                     DrawEditorPatrolPointMarker(layer, pz, px, pointColor);
                     lastX = toX;
@@ -299,8 +299,8 @@ static void DrawEditorEnemyPatrolPlacementPreview()
     int pointColor = GetColor(80, 220, 255);
     int previewColor = GetColor(255, 240, 90);
     float y = selectedPatrolEnemyLayer * BLOCK_SIZE + 70.0f;
-    float fromX = selectedPatrolEnemyX * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-    float fromZ = selectedPatrolEnemyZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+    float fromX = CellToWorldCenter(selectedPatrolEnemyX);
+    float fromZ = CellToWorldCenter(selectedPatrolEnemyZ);
     float lastX = fromX;
     float lastZ = fromZ;
 
@@ -313,8 +313,8 @@ static void DrawEditorEnemyPatrolPlacementPreview()
         if (!IsMapPosValid(selectedPatrolEnemyLayer, pz, px))
             continue;
 
-        float toX = px * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-        float toZ = pz * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        float toX = CellToWorldCenter(px);
+        float toZ = CellToWorldCenter(pz);
         DrawLine3D(VGet(lastX, y, lastZ), VGet(toX, y, toZ), lineColor);
         DrawEditorPatrolPointMarker(selectedPatrolEnemyLayer, pz, px, pointColor);
         lastX = toX;
@@ -323,8 +323,8 @@ static void DrawEditorEnemyPatrolPlacementPreview()
 
     if (IsHoverValid() && hoverX >= 0 && hoverZ >= 0 && currentLayer == selectedPatrolEnemyLayer)
     {
-        float toX = hoverX * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-        float toZ = hoverZ * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+        float toX = CellToWorldCenter(hoverX);
+        float toZ = CellToWorldCenter(hoverZ);
         DrawLine3D(VGet(lastX, y + 12.0f, lastZ), VGet(toX, y + 12.0f, toZ), previewColor);
         DrawEditorPatrolPointMarker(currentLayer, hoverZ, hoverX, previewColor);
     }
@@ -507,8 +507,8 @@ static void DrawEditorMultiSelectionRects()
                     continue;
 
                 DrawEditorCellSelectionOutline(layer, z, x, color);
-                float cx = x * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
-                float cz = z * BLOCK_SIZE + BLOCK_SIZE * 0.5f;
+                float cx = CellToWorldCenter(x);
+                float cz = CellToWorldCenter(z);
                 float y = layer * BLOCK_SIZE + 20.0f;
                 DrawLine3D(VGet(cx - 10.0f, y, cz), VGet(cx + 10.0f, y, cz), accentColor);
                 DrawLine3D(VGet(cx, y, cz - 10.0f), VGet(cx, y, cz + 10.0f), accentColor);

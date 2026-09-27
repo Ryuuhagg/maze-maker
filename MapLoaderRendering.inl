@@ -137,9 +137,9 @@ static void DrawGameClimbHintEdge(int x, int y, int z, int dir)
     GetClimbHintDirOffset(dir, dx, dz);
 
     VECTOR pos = VGet(
-        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f + dx * BLOCK_SIZE * 0.42f,
+        CellToWorldCenter(x) + dx * BLOCK_SIZE * 0.42f,
         y * BLOCK_SIZE + GetLowPlatformTopOffset(),
-        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f + dz * BLOCK_SIZE * 0.42f
+        CellToWorldCenter(z) + dz * BLOCK_SIZE * 0.42f
     );
 
     DrawModelById(30, pos, dir);

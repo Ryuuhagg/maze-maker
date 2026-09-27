@@ -336,9 +336,9 @@ void Enemy::Init(int y, int x, int z, int id) {
     const float enemyRadius = 10.0f;
 
     pos = VGet(
-        x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        CellToWorldCenter(x),
         y * BLOCK_SIZE,
-        z * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        CellToWorldCenter(z)
     );
 
     switch (id) {
@@ -502,14 +502,14 @@ void Enemy::MoveToPlayer(){
     if (!isActive)
         return;
 
-    int enemyX = (int)(pos.x / BLOCK_SIZE);
-    int enemyZ = (int)(pos.z / BLOCK_SIZE);
+    int enemyX = WorldToCell(pos.x);
+    int enemyZ = WorldToCell(pos.z);
 
     if (m_playerLayer != m_layer)
         return;
 
-    int playerX = (int)(m_playerPos.x / BLOCK_SIZE);
-    int playerZ = (int)(m_playerPos.z / BLOCK_SIZE);
+    int playerX = WorldToCell(m_playerPos.x);
+    int playerZ = WorldToCell(m_playerPos.z);
 
     pathTimer++;
 
@@ -526,9 +526,9 @@ void Enemy::MoveToPlayer(){
     Pos2 next = path[1];
 
     VECTOR target = VGet(
-        next.x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        CellToWorldCenter(next.x),
         pos.y,
-        next.z * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        CellToWorldCenter(next.z)
     );
 
     VECTOR dir = VSub(target, pos);
@@ -572,8 +572,8 @@ void Enemy::MovePatrol() {
     if (patrolPoints.empty())
         return;
 
-    int enemyX = (int)(pos.x / BLOCK_SIZE);
-    int enemyZ = (int)(pos.z / BLOCK_SIZE);
+    int enemyX = WorldToCell(pos.x);
+    int enemyZ = WorldToCell(pos.z);
 
     Pos2 goal = patrolPoints[patrolIndex];
 
@@ -611,9 +611,9 @@ void Enemy::MovePatrol() {
 void Enemy::MoveToCell(Pos2 next)
 {
     VECTOR target = VGet(
-        next.x * BLOCK_SIZE + BLOCK_SIZE * 0.5f,
+        CellToWorldCenter(next.x),
         pos.y,
-        next.z * BLOCK_SIZE + BLOCK_SIZE * 0.5f
+        CellToWorldCenter(next.z)
     );
 
     VECTOR dir = VSub(target, pos);
@@ -778,7 +778,7 @@ vector<MapNode> FindMapPathBFS(
         goalZ
     };
 
-    if (!IsGameMapPosValid(
+    if (!IsMapPosValid(
         start.layer,
         start.z,
         start.x))
@@ -786,7 +786,7 @@ vector<MapNode> FindMapPathBFS(
         return {};
     }
 
-    if (!IsGameMapPosValid(
+    if (!IsMapPosValid(
         goal.layer,
         goal.z,
         goal.x))
@@ -831,7 +831,7 @@ vector<MapNode> FindMapPathBFS(
             int nextLayer =
                 current.layer;
 
-            if (!IsGameMapPosValid(
+            if (!IsMapPosValid(
                 nextLayer,
                 nextZ,
                 nextX))
