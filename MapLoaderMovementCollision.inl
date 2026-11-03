@@ -1514,8 +1514,8 @@ static bool IsPlayerOnClimbDownHintMark(int x, int z, int dir, float worldX, flo
 }
 static bool TryClimbToUpperFloorFromHalfStep(VECTOR& pos, float& jumpY, float& vy, bool& isGround, int& layer, float groundRadius)
 {
-    /*if (isGround || !IsMapHalfStepGroundY(playerVerticalJumpBaseY))
-        return false;*/// ジャンプ高さチェックをしない
+    if (isGround || !IsMapHalfStepGroundY(playerVerticalJumpBaseY))
+        return false;// ジャンプ高さチェックをしない
 
     if (!IsMapHalfStepGroundY(playerVerticalJumpBaseY))
         return false;
@@ -1531,9 +1531,9 @@ static bool TryClimbToUpperFloorFromHalfStep(VECTOR& pos, float& jumpY, float& v
         return false;
 
     float upperGroundY = (baseLayer + 1) * BLOCK_SIZE;
-    /*float targetFootY = playerVerticalJumpBaseY + jumpY;
+    float targetFootY = playerVerticalJumpBaseY + jumpY;
     if (targetFootY < upperGroundY - 8.0f)
-        return false;*/// ジャンプ高さチェックをしない
+        return false;// ジャンプ高さチェックをしない
 
 
     for (int dir = 0; dir < 4; dir++)

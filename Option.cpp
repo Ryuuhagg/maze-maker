@@ -206,7 +206,7 @@ void Option::LoadOption(Config& config) {
 		config.PadCancel = StringToPadSafe(j.value("PadCancel", "A"));
 
 		config.KeyDash = StringToKeySafe(j.value("KeyDash", "LSHIFT"));
-		config.PadDash = StringToPadSafe(j.value("PadDash", "PSL"));
+		config.PadDash = StringToPadSafe(j.value("PadDash", "R"));
 
 		config.KeyPause = StringToKeySafe(j.value("KeyPause", "ESC"));
 		config.PadPause = StringToPadSafe(j.value("PadPause", "START"));

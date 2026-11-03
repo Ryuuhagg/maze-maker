@@ -30,7 +30,7 @@ void Player::Init() {
     y = 0;
     vy = 0;
     m_isGround = true;
-    m_gravity = -0.6f;
+    m_gravity = GameTuning::Gravity;
     
     m_life = 3;
 
@@ -90,7 +90,7 @@ void Player::Move() {
         moveZ /= length;
     }
 
-    if (length > 0.1f) {
+    if (length > GameTuning::MovementInputThreshold) {
         angle.x = atan2f(moveX, moveZ);
     }
 
@@ -98,17 +98,17 @@ void Player::Move() {
 
     float currentSpeed = speed;
 
-    m_isMoving = length > 0.1f;
+    m_isMoving = length > GameTuning::MovementInputThreshold;
 
-    if (Input::IsActionPressed(Action::Dash) && length > 0.1f) {
-        currentSpeed *= 2.0f;
+    if (Input::IsActionPressed(Action::Dash) && length > GameTuning::MovementInputThreshold) {
+        currentSpeed *= GameTuning::DashSpeedMultiplier;
         m_isDashing = true;
     }
     else {
         m_isDashing = false;
     }
 
-    const float playerRadius = 60.0f;
+    const float playerRadius = GameTuning::PlayerCollisionRadius;
     VECTOR nextPos = pos;
     nextPos.x += moveX * currentSpeed;
     nextPos.z += moveZ * currentSpeed;
@@ -119,7 +119,7 @@ void Player::Move() {
 }
 
 void Player::Jump() {
-    const float playerRadius = 60.0f;
+    const float playerRadius = GameTuning::PlayerCollisionRadius;
     UpdatePlayerMapVertical(
         pos,
         y,
@@ -165,7 +165,7 @@ void Player::Damage() {
     y = 0;
     vy = 0;
     m_isGround = true;
-    m_gravity = -0.6f;
+    m_gravity = GameTuning::Gravity;
     m_layer = GetMapLayerFromWorldY(pos.y + BLOCK_SIZE * 0.5f);
 }
 
@@ -231,30 +231,37 @@ void Player::ChangeModel(const ModelData& data) {
 void Player::SetCameraAngle(Angle& a) { C_angle = a; }
 #pragma endregion
 #pragma region === Camela ===
-Camela::Camela(Player& p) :Character(0), p(p), distance(360),frontLight(0)
+Camela::Camela(Player& p) :Character(0), p(p), distance(CameraTuning::FollowDistance),frontLight(0)
 {
     Init();
 }
 
 void Camela::Init() {
-    camelaAngle = { 0.0f, 0.3f };
+    camelaAngle = { 0.0f, CameraTuning::DefaultPitch };
 
     frontLight = CreateSpotLightHandle(
         VGet(0, 0, 0),        // ライト位置
         VGet(0, -1, 0),       // 向き
-        DX_PI_F / 4.0f,       // 外側の角度
-        DX_PI_F / 8.0f,       // 内側の角度
-        900.0f,               // 距離
-        0.8f,                 // 強さ
-        0.002f,
+        CameraTuning::SpotOuterAngle,       // 外側の角度
+        CameraTuning::SpotInnerAngle,       // 内側の角度
+        CameraTuning::SpotRange,               // 距離
+        CameraTuning::SpotIntensity,                 // 強さ
+        CameraTuning::SpotAttenuation,
         0.0f
     );
 }
 
-void Camela::Update() {
+void Camela::Update() { Update(true); }
+
+void Camela::ResetView() {
+    camelaAngle = { 0.0f, CameraTuning::DefaultPitch };
+    Update(false);
+}
+
+void Camela::Update(bool processInput) {
     p.SetCameraAngle(camelaAngle);
     VECTOR target = p.getVECTOR();
-    target.y += 80.0f; // 少し上を見るなら足元ではなく体の中心あたり
+    target.y += CameraTuning::TargetHeightOffset; 
 
     VECTOR idealCamPos = VGet(
         target.x - sinf(camelaAngle.x) * distance,
@@ -262,7 +269,7 @@ void Camela::Update() {
         target.z - cosf(camelaAngle.x) * distance
     );
 
-    const float cameraRadius = 20.0f;
+    const float cameraRadius = CameraTuning::CollisionRadius;
     int layer = p.GetLayer();
 
     VECTOR camPos = ResolveCameraCollision(
@@ -280,7 +287,7 @@ void Camela::Update() {
 
     VECTOR lightPos = VGet(
         target.x,
-        target.y + 500.0f,
+        target.y + CameraTuning::LightHeightOffset,
         target.z
     );
 
@@ -292,7 +299,7 @@ void Camela::Update() {
 
     SetCameraPositionAndTarget_UpVecY(camPos, target);
 
-    MoveAngle();
+    if (processInput) MoveAngle();
 }
 
 void Camela::Draw() {
@@ -322,7 +329,7 @@ void Camela::MoveAngle() {
     camelaAngle.x += mouseDX * Input::GetMouseSensitivity();
     camelaAngle.y += mouseDY * Input::GetMouseSensitivity();
 
-    camelaAngle.y = Clamp(camelaAngle.y, 0.0f, 1.5f);
+    camelaAngle.y = Clamp(camelaAngle.y, CameraTuning::MinimumPitch, CameraTuning::MaximumPitch);
 }
 #pragma endregion
 // 7/1追加
@@ -333,7 +340,7 @@ Enemy::Enemy() : Character(7), isActive(false), m_playerPos({0,0}), m_playerLaye
 void Enemy::Init(int y, int x, int z, int id) {
     m_layer = y;
     m_id = id;
-    const float enemyRadius = 10.0f;
+    const float enemyRadius = GameTuning::EnemyCollisionRadius;
 
     pos = VGet(
         CellToWorldCenter(x),
@@ -436,7 +443,7 @@ void Enemy::Move() {
 
 void Enemy::MoveWithHalfStep(VECTOR nextPos)
 {
-    const float enemyRadius = 10.0f;
+    const float enemyRadius = GameTuning::EnemyCollisionRadius;
 
     float currentGroundY =
         GetMapGroundY(
@@ -457,7 +464,7 @@ void Enemy::MoveWithHalfStep(VECTOR nextPos)
     float diff = nextGroundY - currentGroundY;
 
     // 上れる高さかどうか
-    bool canStepUp = diff > 0.0f && diff <= BLOCK_SIZE * 0.5f + 5.0f;
+    bool canStepUp = diff > 0.0f && diff <= BLOCK_SIZE * 0.5f + GameTuning::EnemyStepHeightTolerance;
 
     VECTOR currentPos = pos;
 
@@ -494,7 +501,7 @@ void Enemy::MoveWithHalfStep(VECTOR nextPos)
     else
     {
         // 通常床や下りでは滑らかに高さを合わせる
-        pos.y += (groundY - pos.y) * 0.2f;
+        pos.y += (groundY - pos.y) * GameTuning::EnemyGroundSnapRate;
     }
 }
 
@@ -514,7 +521,7 @@ void Enemy::MoveToPlayer(){
     pathTimer++;
 
     // 毎フレームBFSすると重いので、少し間隔を空ける
-    if (pathTimer >= 30)
+    if (pathTimer >= GameTuning::EnemyPathRecalculationFrames)
     {
         path = FindPathBFS(m_layer, enemyX, enemyZ, playerX, playerZ);
         pathTimer = 0;
@@ -587,14 +594,14 @@ void Enemy::MovePatrol() {
         }
 
         path.clear();
-        pathTimer = 30;
+        pathTimer = GameTuning::EnemyPathRecalculationFrames;
         return;
     }
 
 
     pathTimer++;
 
-    if (pathTimer >= 30)
+    if (pathTimer >= GameTuning::EnemyPathRecalculationFrames)
     {
         path = FindPathBFS(m_layer, enemyX, enemyZ, goal.x, goal.z);
         pathTimer = 0;
@@ -649,9 +656,12 @@ void Enemy::MoveToCell(Pos2 next)
     MV1SetRotationXYZ(m_model, VGet(0, angle + DX_PI_F, 0));
 }
 
-bool Enemy::IsHitPlayer(VECTOR playerPos, int playerLayer) const
+bool Enemy::IsHitPlayer(VECTOR playerPos, int playerLayer, float playerJumpHeight) const
 {
     if (!isActive)
+        return false;
+
+    if (playerJumpHeight >= GameTuning::EnemyAvoidanceJumpHeight)
         return false;
 
     if (playerLayer != m_layer)
@@ -661,8 +671,8 @@ bool Enemy::IsHitPlayer(VECTOR playerPos, int playerLayer) const
     float dz = playerPos.z - pos.z;
     float distSq = dx * dx + dz * dz;
 
-    const float enemyRadius = 10.0f;
-    const float playerRadius = 60.0f;
+    const float enemyRadius = GameTuning::EnemyCollisionRadius;
+    const float playerRadius = GameTuning::PlayerCollisionRadius;
     const float hitRange = enemyRadius + playerRadius;
 
     return distSq <= hitRange * hitRange;
@@ -1037,11 +1047,11 @@ bool EnemyManager::GetEnemyPosition(int index, VECTOR& outPos, int& outLayer) co
     return true;
 }
 
-bool EnemyManager::IsHitPlayer(VECTOR playerPos, int playerLayer) const
+bool EnemyManager::IsHitPlayer(VECTOR playerPos, int playerLayer, float playerJumpHeight) const
 {
     for (const auto& enemy : enemies)
     {
-        if (enemy.IsHitPlayer(playerPos, playerLayer))
+        if (enemy.IsHitPlayer(playerPos, playerLayer, playerJumpHeight))
         {
             return true;
         }

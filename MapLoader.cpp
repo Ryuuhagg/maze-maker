@@ -160,7 +160,7 @@ int gameGoalZ = 5;
 
 static float RotToRad(int rot)
 {
-    return rot * 3.14159265f * 0.5f;
+    return rot * DX_PI_F * 0.5f;
 }
 
 static float Clamp01(float v)
@@ -190,7 +190,7 @@ bool IsMapHalfStepGroundY(float groundY)
 {
     int layer = GetMapGroundLayerFromY(groundY);
     float localY = groundY - layer * BLOCK_SIZE;
-    return localY >= BLOCK_SIZE * 0.25f && localY < BLOCK_SIZE * 0.75f;
+    return localY >= BLOCK_SIZE * MapTuning::HalfStepLowerHeightRatio && localY < BLOCK_SIZE * MapTuning::HalfStepUpperHeightRatio;
 }
 
 void SetGameLoadedLayer(int layer)
@@ -322,19 +322,19 @@ static bool IsOverheadDecoId(int id)
 static float GetLowPlatformTopOffset()
 {   //　2026-07-10-半ブロックにするため変更
     // 装飾6は低い足場なので、通常床より少し高い位置を歩ける上面にする。
-    return BLOCK_SIZE * 0.5f;
+    return BLOCK_SIZE * MapTuning::LowPlatformTopOffsetRatio;
 }
 
 static float GetHighPlatformPostOffset()
 {
     // 装飾7は中央をくぐれるようにして、四つ角だけ柱として当たり判定を置く。
-    return BLOCK_SIZE * 0.12f;
+    return BLOCK_SIZE * MapTuning::HighPlatformPostOffsetRatio;
 }
 
 static float GetHighPlatformPostRadius()
 {
     // 柱が太すぎると中央通路を邪魔するので、角だけ止まる程度の半径に抑える。
-    return BLOCK_SIZE * 0.08f;
+    return BLOCK_SIZE * MapTuning::HighPlatformPostRadiusRatio;
 }
 
 static int GetStairsDrawRot(int rot)
@@ -942,13 +942,13 @@ static void InitCollisionTable()
     collisionTable[1].type = COLL_WALL;
 
     collisionTable[2].type = COLL_CIRCLE;
-    collisionTable[2].radius = BLOCK_SIZE * 0.3f;
+    collisionTable[2].radius = BLOCK_SIZE * MapTuning::CircularCollisionRadiusRatio;
 
     collisionTable[5].type = COLL_STAIRS;
 
     collisionTable[6].type = COLL_BOX;
-    collisionTable[6].width = BLOCK_SIZE * 0.35f;
-    collisionTable[6].depth = BLOCK_SIZE * 0.35f;
+    collisionTable[6].width = BLOCK_SIZE * MapTuning::BoxCollisionWidthRatio;
+    collisionTable[6].depth = BLOCK_SIZE * MapTuning::BoxCollisionDepthRatio;
 
     collisionTable[7].type = COLL_NONE;
 

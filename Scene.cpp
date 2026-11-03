@@ -816,6 +816,7 @@ void Game::Init() {
 	showingOption = false;
 
 	timer.Reset();
+	timer.Pause();
 	UISet();
 	InitGameMap();
 	// 2026-06-02: マップ読込後のEVENT配置からゲーム中ギミックを生成するため追加。
@@ -823,6 +824,7 @@ void Game::Init() {
 	// 2026-06-12: [ENEMY]???????G???AEVENT?M?~?b?N???????????????????B
 	//InitGameEnemies();
 	p.Init();
+	c.ResetView();
 	e.Init();
 
 }
@@ -844,7 +846,7 @@ void Game::Draw() {
 	DrawFormatString(20, 122, WHITE, "layer %d", p.GetLayer());
 
 	elapsed = (timer.Elapsed() / 1000) % 60;
-	int minutes = timer.Elapsed() / 60000;
+	int minutes = timer.Elapsed() / (1000 * 60);
 
 	DrawFormatStringToHandle(WIDTH / 2, 100, WHITE, FontManager::Get(32), "%02d:%02d", minutes, elapsed);
 
@@ -885,6 +887,7 @@ void Game::Update(SceneManager& manager) {
 
 	if (!isPause)
 	{
+		timer.Resume();
 		SetMouseDispFlag(FALSE);
 		Input::UpdateMouseDeltaFromCenter();
 
@@ -893,12 +896,9 @@ void Game::Update(SceneManager& manager) {
 		c.Update();
 		UpdateGameMap();
 
-		timer.Resume();
-
 		// 2026-06-02: 取るもの/避けるもの/鍵扉/投げ敵をプレイヤー位置に合わせて更新するため追加。
 		bool playerDamaged = false;
-		int playerLayer = GetMapLayerFromWorldY(p.getVECTOR().y + BLOCK_SIZE * 0.5f);
-		UpdateGameObjects(p.getVECTOR(), playerLayer, playerDamaged);
+		UpdateGameObjects(p.getVECTOR(), p.GetLayer(), playerDamaged);
 		// 2026-06-12: ?GAI??G?e????????????X?V?????????B
 	//	UpdateGameEnemies(p.getVECTOR(), playerLayer, playerDamaged);
 		if (playerDamaged)
@@ -907,7 +907,7 @@ void Game::Update(SceneManager& manager) {
 			p.Damage();
 			manager.Trans(make_unique<DamageFade>(p.GetLife()));
 		}
-		if (e.IsHitPlayer(p.getVECTOR(), p.GetLayer()))
+		if (e.IsHitPlayer(p.getVECTOR(), p.GetLayer(), p.GetJumpHeight()))
 		{
 			timer.Pause();
 			p.Damage();
@@ -1219,7 +1219,7 @@ void Result::CountUp() {
 	}
 
 	elapsed = (totalTime / 1000) % 60;
-	minutes = totalTime / 60000;
+	minutes = totalTime / (1000 * 60);
 }
 
 

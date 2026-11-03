@@ -30,7 +30,7 @@ static VECTOR GetEventWorldPosition(int layer, int x, int z)
     // 2026-06-02: EVENTのセル座標を、描画と接触判定で使うワールド座標へ変換するため追加。
     return VGet(
         CellToWorldCenter(x),
-        layer * BLOCK_SIZE + 80.0f,
+        layer * BLOCK_SIZE + GameTuning::EntityWorldPositionHeightOffset,
         CellToWorldCenter(z)
     );
 }
@@ -50,7 +50,7 @@ static float DistancePointToSegmentXZ(float px, float pz, float x1, float z1, fl
     float dz = z2 - z1;
     float lenSq = dx * dx + dz * dz;
     along = 0.0f;
-    if (lenSq > 0.0001f)
+    if (lenSq > GameTuning::SegmentLengthEpsilonSquared)
     {
         along = ((px - x1) * dx + (pz - z1) * dz) / lenSq;
         if (along < 0.0f) along = 0.0f;
@@ -100,10 +100,10 @@ static bool HitLockedDoorWallLine(int x, int z, int rot, float worldX, float wor
     float lineDZ = z2 - z1;
     float lineLen = sqrtf(lineDX * lineDX + lineDZ * lineDZ);
     float rawAlong = 0.0f;
-    if (lineLen > 0.0001f)
+    if (lineLen > GameTuning::SegmentLengthEpsilon)
         rawAlong = ((worldX - x1) * lineDX + (worldZ - z1) * lineDZ) / (lineLen * lineLen);
 
-    float endMarginRate = lineLen > 0.0001f ? (radius * 0.85f) / lineLen : 0.0f;
+    float endMarginRate = lineLen > GameTuning::SegmentLengthEpsilon ? (radius * GameTuning::DoorEndMarginRadiusFactor) / lineLen : 0.0f;
     if (rawAlong < -endMarginRate || rawAlong > 1.0f + endMarginRate)
         return false;
 
@@ -119,12 +119,12 @@ static bool HitLockedDoorWallLine(int x, int z, int rot, float worldX, float wor
     case 3: signedDist = worldX - x1; break;
     }
 
-    float frontThickness = BLOCK_SIZE * 0.19f;
-    float backThickness = BLOCK_SIZE * 0.03f;
+    float frontThickness = BLOCK_SIZE * GameTuning::DoorFrontThicknessFactor;
+    float backThickness = BLOCK_SIZE * GameTuning::DoorBackThicknessFactor;
     if (signedDist >= 0.0f)
         return dist <= radius + frontThickness;
 
-    float backRadius = radius * 0.75f;
+    float backRadius = radius * GameTuning::DoorBackRadiusFactor;
     return dist <= backRadius + backThickness;
 }
 static void DrawModelWithoutLighting(int modelHandle)
@@ -156,7 +156,7 @@ static void DrawGameEventModelHandle(int modelHandle, int layer, int x, int z, i
     // 2026-07-21: 閉じ扉/開き扉の両方を同じ座標と回転で描けるよう、EVENTモデル描画を共通化する。
     VECTOR modelPos = VGet(
         CellToWorldCenter(x),
-        layer * BLOCK_SIZE + 8.0f,
+        layer * BLOCK_SIZE + GameTuning::EventModelDrawHeightOffset,
         CellToWorldCenter(z)
     );
     if (adjustLockedDoor)
@@ -198,7 +198,7 @@ static void DamagePlayer(bool& playerDamaged)
         return;
 
     playerDamaged = true;
-    playerDamageCooldown = 90.0f;
+    playerDamageCooldown = GameTuning::DamageInvulnerabilityFrames;
 }
 
 // 2026-06-17: ギミックごとの処理をif文で増やさず、種類ごとのclassへ分けて管理するため追加。
@@ -401,7 +401,7 @@ static unique_ptr<GameObjectBase> CreateGameObjectFromEvent(int id, int layer, i
 
 void PickupObject::Update(VECTOR playerPos, int playerLayer, bool& playerDamaged)
 {
-    if (IsNearPlayer(playerPos, 115.0f))
+    if (IsNearPlayer(playerPos, GameTuning::GameObjectInteractionRadius))
     {
         active = false;
         gameObjectPickupCount++;
@@ -456,7 +456,7 @@ void HazardObject::Draw() const
 
 void KeyObject::Update(VECTOR playerPos, int playerLayer, bool& playerDamaged)
 {
-    if (IsNearPlayer(playerPos, 115.0f))
+    if (IsNearPlayer(playerPos, GameTuning::GameObjectInteractionRadius))
     {
         active = false;
         gameObjectKeyCount++;
@@ -479,7 +479,7 @@ void LockedDoorObject::Update(VECTOR playerPos, int playerLayer, bool& playerDam
     if (playerLayer != layer)
         return;
 
-    if (!HitLockedDoorWallLine(x, z, rot, playerPos.x, playerPos.z, 40.0f))
+    if (!HitLockedDoorWallLine(x, z, rot, playerPos.x, playerPos.z, GameTuning::LockedDoorHitRadius))
         return;
 
     if (gameObjectKeyCount > 0)
@@ -518,7 +518,7 @@ bool LockedDoorObject::BlocksMovement() const
 void CheckpointObject::Update(VECTOR playerPos, int playerLayer, bool& playerDamaged)
 {
     // 2026-07-01: プレイヤーが触れた地点を、次にダメージを受けた時の復帰地点として保持する。
-    if (!IsNearPlayer(playerPos, 130.0f))
+    if (!IsNearPlayer(playerPos, GameTuning::CheckpointInteractionRadius))
         return;
 
     gameCheckpointActivated = true;

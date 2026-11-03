@@ -35,7 +35,7 @@ VECTOR GetGameEnemyWorldPosition(int layer, int x, int z)
     // 2026-06-12: ENEMYのセル座標を描画・攻撃判定で使うワールド座標へ変換するため追加。
     return VGet(
         CellToWorldCenter(x),
-        layer * BLOCK_SIZE + 80.0f,
+        layer * BLOCK_SIZE + GameTuning::EntityWorldPositionHeightOffset,
         CellToWorldCenter(z)
     );
 }
@@ -70,18 +70,18 @@ static void DamagePlayer(bool& playerDamaged)
         return;
 
     playerDamaged = true;
-    enemyDamageCooldown = 90.0f;
+    enemyDamageCooldown = GameTuning::DamageInvulnerabilityFrames;
 }
 
 static void SpawnProjectile(const GameEnemy& enemy, VECTOR playerPos)
 {
     VECTOR start = GetGameEnemyWorldPosition(enemy.layer, enemy.x, enemy.z);
-    start.y += 60.0f;
+    start.y += GameTuning::EnemyProjectileSpawnHeight;
 
     float dx = playerPos.x - start.x;
     float dz = playerPos.z - start.z;
     float len = sqrtf(dx * dx + dz * dz);
-    if (len < 0.001f)
+    if (len < GameTuning::EnemyProjectileDirectionEpsilon)
         return;
 
     dx /= len;
@@ -89,7 +89,7 @@ static void SpawnProjectile(const GameEnemy& enemy, VECTOR playerPos)
 
     EnemyProjectile projectile;
     projectile.pos = start;
-    projectile.velocity = VGet(dx * 14.0f, 0.0f, dz * 14.0f);
+    projectile.velocity = VGet(dx * GameTuning::EnemyProjectileSpeed, 0.0f, dz * GameTuning::EnemyProjectileSpeed);
     projectile.layer = enemy.layer;
     projectile.active = true;
     enemyProjectiles.push_back(projectile);
@@ -107,7 +107,7 @@ static void AddEnemyFromMap(int id, int layer, int x, int z)
     enemy.x = x;
     enemy.z = z;
     enemy.active = true;
-    enemy.cooldown = 30.0f;
+    enemy.cooldown = GameTuning::EnemyInitialCooldownFrames;
     gameEnemies.push_back(enemy);
 }
 
@@ -185,10 +185,10 @@ void UpdateGameEnemies(VECTOR playerPos, int playerLayer, bool& playerDamaged)
         if (enemy.id == GAME_ENEMY_THROW)
         {
             float dist = DistanceXZ(GetGameEnemyWorldPosition(enemy.layer, enemy.x, enemy.z), playerPos);
-            if (enemy.layer == playerLayer && dist <= BLOCK_SIZE * 4.0f && enemy.cooldown <= 0.0f)
+            if (enemy.layer == playerLayer && dist <= BLOCK_SIZE * GameTuning::EnemyContactRangeInBlocks && enemy.cooldown <= 0.0f)
             {
                 SpawnProjectile(enemy, playerPos);
-                enemy.cooldown = 95.0f;
+                enemy.cooldown = GameTuning::EnemyContactCooldownFrames;
             }
         }
     }
@@ -202,7 +202,7 @@ void UpdateGameEnemies(VECTOR playerPos, int playerLayer, bool& playerDamaged)
         projectile.pos.x += projectile.velocity.x;
         projectile.pos.z += projectile.velocity.z;
 
-        if (projectile.layer == playerLayer && DistanceXZ(projectile.pos, playerPos) <= 90.0f)
+        if (projectile.layer == playerLayer && DistanceXZ(projectile.pos, playerPos) <= GameTuning::EnemyProjectileHitRadius)
         {
             projectile.active = false;
             DamagePlayer(playerDamaged);
@@ -214,7 +214,7 @@ void UpdateGameEnemies(VECTOR playerPos, int playerLayer, bool& playerDamaged)
         {
             projectile.active = false;
         }
-        else if (!CanMoveWorldPosition(projectile.layer, projectile.pos.x, projectile.pos.z, 30.0f))
+        else if (!CanMoveWorldPosition(projectile.layer, projectile.pos.x, projectile.pos.z, GameTuning::EnemyProjectileWallCheckRadius))
         {
             projectile.active = false;
         }
@@ -232,7 +232,7 @@ void DrawGameEnemies()
 
         VECTOR pos = GetGameEnemyWorldPosition(enemy.layer, enemy.x, enemy.z);
         int color = GetColor(255, 140, 40);
-        DrawSphere3D(pos, 68.0f, 16, color, GetColor(255, 255, 255), TRUE);
+        DrawSphere3D(pos, GameTuning::EnemyVisualRadius, GameTuning::EnemyVisualSegments, color, GetColor(255, 255, 255), TRUE);
     }
 
     for (int i = 0; i < (int)enemyProjectiles.size(); i++)
@@ -241,7 +241,7 @@ void DrawGameEnemies()
         if (!projectile.active)
             continue;
 
-        DrawSphere3D(projectile.pos, 32.0f, 12, GetColor(255, 80, 30), GetColor(255, 255, 255), TRUE);
+        DrawSphere3D(projectile.pos, GameTuning::EnemyProjectileVisualRadius, GameTuning::EnemyProjectileVisualSegments, GetColor(255, 80, 30), GetColor(255, 255, 255), TRUE);
     }
 }
 

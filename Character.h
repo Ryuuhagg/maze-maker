@@ -29,6 +29,7 @@ enum class CharaState {
 };
 
 
+
 class Player : public Character {
 	int m_model = 0;
 	int m_animeIndex = 0;
@@ -44,7 +45,7 @@ class Player : public Character {
 
 	float y = 0;
 	float vy = 0;
-	float m_gravity = -0.6f;
+	float m_gravity = GameTuning::Gravity;
 	bool m_isGround = true;
 
 	int m_life = 0;
@@ -71,6 +72,7 @@ public:
 	bool IsAlive() const;
 	int GetLife() const;
 	int GetLayer()const;
+    float GetJumpHeight() const { return y; }
 	void UpdateState();
 	void UpdateAnimation();
 
@@ -83,7 +85,7 @@ public:
 
 class Camela : public Character {
 	Player& p;
-	Angle camelaAngle = {0.0f, 0.3f };
+	Angle camelaAngle = {0.0f, CameraTuning::DefaultPitch };
 	float distance;
 	int frontLight;
 public:
@@ -93,6 +95,8 @@ public:
 	void Draw() override;
 
 	void MoveAngle();
+    void ResetView();
+    void Update(bool processInput);
 };
 /**/
 //6/8í«â¡
@@ -117,12 +121,14 @@ enum class EnemyState {
 	Chase   // í«ê’
 };
 
+
+
 class Enemy : public Character {
 	EnemyState state = EnemyState::Patrol; 
 	vector<Pos2> patrolPoints;
 	int patrolIndex = 0;
 
-	float chaseRange = 900.0f;
+	float chaseRange = GameTuning::EnemySearchRange;
 
 	vector<Pos2> path;
 	int pathTimer = 0;
@@ -163,7 +169,7 @@ public:
 
 	void MoveToCell(Pos2 next);
 
-	bool IsHitPlayer(VECTOR playerPos, int playerLayer) const;
+	bool IsHitPlayer(VECTOR playerPos, int playerLayer, float playerJumpHeight) const;
 
 	void SetPlayerPos(VECTOR playerPos);
 	void SetPlayerLayer(int playerLayer);
@@ -184,7 +190,7 @@ public:
     int GetEnemyCount() const;
     bool GetEnemyPosition(int index, VECTOR& pos, int& layer) const;
 
-	bool IsHitPlayer(VECTOR playerPos, int playerLayer) const;
+	bool IsHitPlayer(VECTOR playerPos, int playerLayer, float playerJumpHeight) const;
 };
 
 extern EnemyManager e;
